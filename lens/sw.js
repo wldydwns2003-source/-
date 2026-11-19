@@ -1,6 +1,6 @@
 // 공유 대상(Share Target)으로 받은 이미지를 캐시에 잠깐 보관했다가 페이지로 넘겨줍니다.
 const SHARE_CACHE = 'shared-image';
-const APP_CACHE = 'sns-lens-v5';
+const APP_CACHE = 'sns-lens-v6';
 const APP_FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -35,7 +35,7 @@ self.addEventListener('fetch', (e) => {
   // 네트워크 우선, 실패하면 캐시 (오프라인에서도 앱 화면은 열리도록)
   e.respondWith((async () => {
     try {
-      const res = await fetch(e.request);
+      const res = await fetch(e.request, { cache: 'no-cache' });
       if (res.ok && APP_FILES.some((f) => url.pathname.endsWith(f.replace('./', '/')))) {
         (await caches.open(APP_CACHE)).put(e.request, res.clone());
       }
