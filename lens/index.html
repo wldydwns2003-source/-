@@ -53,6 +53,10 @@
   .small { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .small a { color: var(--accent2); }
   ol.small { padding-left: 18px; margin: 6px 0; }
+  .pastebox { margin-top: 10px; min-height: 64px; border: 2px dashed var(--accent2); border-radius: 12px; padding: 12px;
+    color: var(--text); text-align: center; outline: none; overflow: hidden; max-height: 120px; }
+  .pastebox:empty::before { content: attr(data-ph); color: var(--muted); }
+  .pastebox img { max-height: 90px; }
   .ocr { font-size: 12px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px; max-height: 90px; overflow: auto; white-space: pre-wrap; }
 </style>
 </head>
@@ -89,6 +93,9 @@
       <b>캡처 사진 선택</b>
       <span class="small">또는 갤러리/스크린샷에서 <b>공유 → SNS검색</b></span>
     </label>
+    <button class="btn" id="pasteBtn" style="margin-top:10px">📋 캡처한 사진 붙여넣기</button>
+    <div id="pasteBox" class="pastebox hidden" contenteditable="true" inputmode="none"
+      data-ph="여기를 길게 눌러 → 붙여넣기"></div>
     <input type="file" id="fileInput" accept="image/*" class="hidden">
     <img id="preview" class="preview hidden" alt="선택한 이미지">
     <div class="row2 hidden" id="imgActions">
@@ -172,6 +179,8 @@ function setImage(file, auto) {
   $('preview').src = URL.createObjectURL(file);
   $('preview').classList.remove('hidden');
   $('drop').classList.add('hidden');
+  $('pasteBtn').classList.add('hidden');
+  $('pasteBox').classList.add('hidden');
   $('imgActions').classList.remove('hidden');
   $('analyzeBtn').classList.remove('hidden');
   $('help').classList.add('hidden');
@@ -194,10 +203,48 @@ async function loadShared() {
   } catch (e) { setStatus('공유 이미지 읽기 실패: ' + e.message, true); }
 }
 
-// 클립보드 붙여넣기 (PC에서 테스트할 때 편하게)
+// ---------- 클립보드 붙여넣기 ----------
+// 1) 버튼: 클립보드에서 바로 이미지 읽기 (크롬이 "클립보드 허용?"을 물으면 허용)
+$('pasteBtn').onclick = async () => {
+  try {
+    if (!navigator.clipboard?.read) throw new Error('unsupported');
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (type) {
+        const blob = await item.getType(type);
+        $('pasteBox').classList.add('hidden');
+        return setImage(new File([blob], 'clipboard.' + type.split('/')[1], { type }), true);
+      }
+    }
+    setStatus('클립보드에 사진이 없어요. 캡처 후 "복사"를 먼저 눌러주세요.\n또는 아래 칸을 길게 눌러 붙여넣기 해보세요.', true);
+  } catch {
+    setStatus('바로 읽기가 막혀 있어요. 아래 점선 칸을 길게 눌러 → 붙여넣기 하세요.');
+  }
+  // 2) 대안: 점선 칸을 길게 눌러 붙여넣기 (키보드 클립보드도 가능)
+  $('pasteBox').classList.remove('hidden');
+  $('pasteBox').focus();
+};
+
+// 붙여넣기 이벤트 (점선 칸, 또는 화면 어디서든)
 document.addEventListener('paste', (e) => {
   const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
-  if (item) setImage(item.getAsFile(), true);
+  if (item) {
+    e.preventDefault();
+    $('pasteBox').classList.add('hidden');
+    setImage(item.getAsFile(), true);
+  }
+});
+// 일부 키보드는 paste 이벤트 대신 <img>를 직접 넣음 → 그 이미지를 가져옴
+$('pasteBox').addEventListener('input', async () => {
+  const img = $('pasteBox').querySelector('img');
+  $('pasteBox').innerHTML = '';
+  if (!img) return setStatus('사진이 아니에요. 캡처 사진을 복사한 뒤 다시 붙여넣어 주세요.', true);
+  try {
+    const blob = await (await fetch(img.src)).blob();
+    $('pasteBox').classList.add('hidden');
+    setImage(new File([blob], 'pasted.' + (blob.type.split('/')[1] || 'png'), { type: blob.type || 'image/png' }), true);
+  } catch { setStatus('붙여넣은 사진을 읽지 못했어요. "캡처 사진 선택"으로 골라주세요.', true); }
 });
 
 // ---------- 구글 렌즈로 넘기기 (안드로이드 공유창) ----------
