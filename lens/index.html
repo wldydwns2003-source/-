@@ -102,15 +102,40 @@
       <button class="btn ghost" id="changeBtn">다른 사진</button>
       <button class="btn ghost" id="lensBtn">🔍 구글 렌즈로</button>
     </div>
-    <button class="btn hidden" id="analyzeBtn" style="margin-top:10px">✨ 분석해서 검색어 만들기</button>
+    <button class="btn hidden" id="analyzeBtn" style="margin-top:10px">✨ 원본 영상 찾기</button>
     <div class="status" id="status"></div>
   </section>
 
   <!-- 결과 -->
+  <section class="card hidden" id="origin">
+    <h2 style="margin:0 0 4px;font-size:17px">🎯 원본 영상 찾기</h2>
+    <p class="small" id="originInfo" style="margin:0"></p>
+    <div class="label">계정 아이디 (틀리면 고쳐주세요)</div>
+    <input type="text" id="user" placeholder="화면에 보이는 아이디, 예: home_temterior" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="chips" id="userChips" style="margin-top:6px"></div>
+    <div class="label">① 이 계정 영상 목록 열기 → 같은 썸네일 찾기</div>
+    <div class="targets">
+      <a class="target ig" id="pIg" target="_blank" rel="noopener"><i>◎</i> 인스타 릴스</a>
+      <a class="target tt" id="pTt" target="_blank" rel="noopener"><i>♪</i> 틱톡 계정</a>
+      <a class="target yt" id="pYt" target="_blank" rel="noopener"><i>▶</i> 유튜브 쇼츠</a>
+      <a class="target gg" id="pG" target="_blank" rel="noopener"><i>G</i> 계정 검색</a>
+    </div>
+    <div class="label">② 자막·캡션으로 정확히 찾기</div>
+    <input type="text" id="key" placeholder="영상 속 자막/캡션, 예: 창가에 흔들의자">
+    <div class="targets">
+      <a class="target gg" id="xIg" target="_blank" rel="noopener"><i>G</i> 인스타에서</a>
+      <a class="target gg" id="xTt" target="_blank" rel="noopener"><i>G</i> 틱톡에서</a>
+      <a class="target gg" id="xYt" target="_blank" rel="noopener"><i>G</i> 유튜브에서</a>
+      <a class="target gg" id="xAll" target="_blank" rel="noopener"><i>G</i> 전체</a>
+    </div>
+    <p class="small" id="musicInfo"></p>
+    <p class="small">③ 그래도 없으면 위의 <b>🔍 구글 렌즈로</b> → 렌즈 결과 위 검색창에 <b>instagram</b> 추가</p>
+  </section>
+
   <section class="card hidden" id="result">
     <p class="summary" id="summary"></p>
     <div id="ocrBox" class="hidden"><div class="label">사진 속 글자</div><div class="ocr" id="ocrText"></div></div>
-    <div class="label">검색어 (눌러서 선택)</div>
+    <div class="label">비슷한 영상 검색어 (눌러서 선택)</div>
     <div class="chips" id="chips"></div>
     <div class="q">
       <input type="text" id="query" placeholder="검색어를 직접 입력/수정해도 돼요">
@@ -185,6 +210,7 @@ function setImage(file, auto) {
   $('analyzeBtn').classList.remove('hidden');
   $('help').classList.add('hidden');
   $('result').classList.add('hidden');
+  $('origin').classList.add('hidden');
   setStatus('');
   if (auto) analyze();
 }
@@ -285,7 +311,7 @@ async function analyze() {
     setStatus(key ? $('status').textContent.split('\n')[0] : '팁: ⚙️ 설정에 Gemini 무료 키를 넣으면 사물·인물·장소까지 알아봐요.');
   } catch (e) {
     setStatus('분석 실패: ' + e.message + '\n아래 칸에 검색어를 직접 입력해도 돼요.', true);
-    showResult({ summary: '', queries: [], hashtags: [] });
+    showResult({ summary: '', queries: [], hashtags: [], usernames: [], platform: 'unknown' });
   } finally {
     $('analyzeBtn').disabled = false;
   }
@@ -307,25 +333,28 @@ function toJpegBase64(file, max = 1280) {
   });
 }
 
-const PROMPT = `이 이미지는 사용자가 휴대폰으로 캡처한 화면이야. 이 이미지와 관련된 영상/게시물을 유튜브, 틱톡, 인스타그램에서 찾고 싶어.
-이미지 속 인물(유명인이면 이름), 상품(브랜드·제품명), 장소(가게·지명), 음식, 캐릭터, 밈, 영상/드라마/게임 제목, 화면 속 글자를 꼼꼼히 파악해서
-SNS 검색창에 그대로 넣었을 때 가장 잘 찾아질 검색어를 만들어줘.
+const PROMPT = `이 이미지는 사용자가 휴대폰으로 캡처한 SNS(인스타 릴스/틱톡/유튜브 쇼츠 등) 화면일 가능성이 높아. 목표는 "이 캡처가 나온 바로 그 원본 영상"을 찾는 거야.
+화면 속 글자를 한 글자도 틀리지 않게 읽어줘. 특히 계정 아이디는 밑줄(_)과 마침표(.)를 정확히 구분해.
 다음 JSON 형식으로만 답해:
 {
-  "summary": "이미지가 무엇인지 한국어 한두 문장",
-  "queries": ["가장 구체적인 검색어부터 순서대로 4~7개. 한국어 위주, 해외 콘텐츠로 보이면 영어 검색어도 포함. 각 2~6단어"],
-  "hashtags": ["# 없이 해시태그 4~8개, 한국어/영어 섞어서, 띄어쓰기 없이"],
-  "text_in_image": "이미지에 보이는 핵심 글자 (없으면 빈 문자열)"
+  "platform": "instagram | tiktok | youtube | unknown (화면 UI로 판단)",
+  "username": "화면에 보이는 게시자 계정 아이디 그대로 (@ 없이, 없으면 빈 문자열)",
+  "caption": "게시물 설명/캡션 글자 그대로 (없으면 빈 문자열)",
+  "overlay_text": "영상 위에 얹힌 자막 글자 그대로 (없으면 빈 문자열)",
+  "music": "음악 정보 글자 그대로 (없으면 빈 문자열)",
+  "summary": "이미지 내용 한국어 한두 문장",
+  "queries": ["비슷한 영상을 찾을 검색어 4~6개, 구체적인 것부터"],
+  "hashtags": ["# 없이 해시태그 4~8개"]
 }`;
 
 async function geminiAnalyze(file, key, model) {
-  const b64 = await toJpegBase64(file);
+  const b64 = await toJpegBase64(file, 1600);
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
       contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: b64 } }, { text: PROMPT }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
     }),
   });
   const json = await res.json().catch(() => ({}));
@@ -339,16 +368,22 @@ async function geminiAnalyze(file, key, model) {
   const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error('AI 응답을 이해하지 못했어요');
-  const data = JSON.parse(m[0]);
+  const d = JSON.parse(m[0]);
+  const u = String(d.username || '').replace(/^@/, '').trim();
   return {
-    summary: data.summary || '',
-    queries: (data.queries || []).filter(Boolean),
-    hashtags: (data.hashtags || []).map((h) => String(h).replace(/^#/, '').replace(/\s+/g, '')).filter(Boolean),
-    ocr: data.text_in_image || '',
+    summary: d.summary || '',
+    queries: (d.queries || []).filter(Boolean),
+    hashtags: (d.hashtags || []).map((h) => String(h).replace(/^#/, '').replace(/\s+/g, '')).filter(Boolean),
+    ocr: '',
+    platform: ['instagram', 'tiktok', 'youtube'].includes(d.platform) ? d.platform : 'unknown',
+    usernames: u ? [u] : [],
+    key: d.overlay_text || d.caption || '',
+    keys: [d.overlay_text, d.caption].filter(Boolean),
+    music: d.music || '',
   };
 }
 
-// 무료·오프라인 대안: 폰 안에서 글자 인식 (Tesseract.js)
+// ---------- 무료·오프라인 대안: 폰 안에서 글자 인식 (Tesseract.js) ----------
 let tesseractLoading = null;
 function loadTesseract() {
   if (window.Tesseract) return Promise.resolve();
@@ -361,29 +396,169 @@ function loadTesseract() {
   });
 }
 
+function loadImg(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지를 열 수 없어요'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// 글자가 작으니 크게 키운 캔버스
+function scaledCanvas(img) {
+  const s = Math.min(3, Math.max(1, 2600 / Math.max(img.width, img.height)));
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
+// SNS 화면의 아이디·캡션·자막은 대부분 흰 글자 → 흰 글자만 검정으로 남긴 버전
+function whiteTextCanvas(src) {
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(src, 0, 0);
+  const im = ctx.getImageData(0, 0, c.width, c.height);
+  const p = im.data;
+  for (let i = 0; i < p.length; i += 4) {
+    const min = Math.min(p[i], p[i + 1], p[i + 2]);
+    const max = Math.max(p[i], p[i + 1], p[i + 2]);
+    const v = (min > 195 && max - min < 40) ? 0 : 255;
+    p[i] = p[i + 1] = p[i + 2] = v;
+  }
+  ctx.putImageData(im, 0, 0);
+  return c;
+}
+
 async function ocrAnalyze(file) {
   await loadTesseract();
-  const { data } = await Tesseract.recognize(file, 'kor+eng');
-  const lines = data.text.split('\n')
-    .map((l) => l.replace(/[|_~`^*<>{}\[\]\\]/g, ' ').replace(/\s+/g, ' ').trim())
-    .filter((l) => l.length >= 2 && /[가-힣a-zA-Z]/.test(l))
-    // 시계·배터리·조회수 같은 화면 잡음 제거
-    .filter((l) => !/^[\d\s:.,%KkMm만천회개]+$/.test(l));
-  const queries = [...new Set(lines.filter((l) => l.length <= 40))]
-    .sort((a, b) => b.length - a.length).slice(0, 6);
-  const words = [...new Set(lines.join(' ').split(' ').filter((w) => w.length >= 2 && /[가-힣a-zA-Z]{2,}/.test(w)))];
-  const hashtags = [...new Set([
-    ...(data.text.match(/#[^\s#]+/g) || []).map((h) => h.slice(1)),
-    ...words.slice(0, 5),
-  ])].slice(0, 8);
+  const img = await loadImg(file);
+  const big = scaledCanvas(img);
+  const worker = await Tesseract.createWorker('kor+eng');
+  try {
+    setStatus('글자 읽는 중… (1/2)');
+    const t1 = (await worker.recognize(big)).data.text;
+    setStatus('흰 글자(아이디·자막) 다시 읽는 중… (2/2)');
+    const t2 = (await worker.recognize(whiteTextCanvas(big))).data.text;
+    return parseScreenText(t2 + '\n' + t1);
+  } finally {
+    worker.terminate();
+  }
+}
+
+const UI_WORDS = /^(좋아요|댓글|공유|저장|팔로우|팔로잉|추천|구독|리믹스|답글|더 ?보기|댓글 추가.*|add comment.*|follow|following|for you|like|share|save|remix|subscribe|shorts|reels|릴스|홈|검색|프로필|친구)$/i;
+
+function parseScreenText(raw) {
+  const lines = [...new Set(raw.split('\n')
+    .map((l) => l.replace(/[|~`^*<>{}\[\]\\]/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter((l) => l.length >= 2 && /[가-힣a-zA-Z]/.test(l)))];
+  const all = lines.join('\n');
+
+  // 플랫폼 추정
+  let platform = 'unknown';
+  if (/tiktok|틱톡|팔로잉\s*\|?\s*추천|for you/i.test(all)) platform = 'tiktok';
+  else if (/shorts|구독|subscribe|리믹스|유튜브|youtube/i.test(all)) platform = 'youtube';
+  else if (/댓글 ?추가|릴스|reels|instagram|인스타/i.test(all)) platform = 'instagram';
+
+  // 계정 아이디 후보: @아이디, 또는 . _ 가 들어간 영문 토큰 ("home. temterior" → home_temterior)
+  const users = [];
+  const add = (u) => { u = u.toLowerCase(); if (!users.includes(u)) users.push(u); };
+  for (const m of all.matchAll(/@\s?([A-Za-z0-9._]{2,30})/g)) add(m[1].replace(/[._]+$/, ''));
+  for (const line of lines) {
+    for (const m of line.matchAll(/([A-Za-z0-9]+(?:\s?[._]\s?|\s?[._]?\s)[A-Za-z0-9]+(?:[._][A-Za-z0-9]+)*)/g)) {
+      const rawTok = m[1];
+      if (!/[._]/.test(rawTok)) continue; // 공백만으로 이어진 일반 영어 문장은 제외
+      const hadSpace = /\s/.test(rawTok);
+      const tok = rawTok.replace(/\s/g, '');
+      if (tok.length < 4 || tok.length > 30 || !/[a-z]/i.test(tok) || /\.(com|net|kr|co|io)$/i.test(tok)) continue;
+      // 밑줄은 글자 인식에서 "." 이나 공백으로 잘 바뀜 → 밑줄 버전을 먼저
+      const under = tok.replace(/\./g, '_');
+      if (hadSpace) { add(under); add(tok); } else { add(tok); if (under !== tok) add(under); }
+    }
+  }
+
+  // 음악 줄 (♪ ♫ ♬ 아이콘이 J3, JJ, 月 등으로 읽힘)
+  const musicLine = lines.find((l) => /^(♪|♫|♬|J3|JJ|J\s|月|ㅁ\s)/.test(l) || /\s[-·•]\s.*(feel|remix|radio|official|ver|song)/i.test(l)) || '';
+  const music = musicLine.replace(/^(♪|♫|♬|J3|JJ|J|月|ㅁ)\s*/, '').trim();
+
+  // 자막/캡션 후보: 한글이 4자 이상, UI 단어·숫자줄·아이디줄 제외
+  const keys = lines
+    .filter((l) => l !== musicLine && !UI_WORDS.test(l) && (l.match(/[가-힣]/g) || []).length >= 3)
+    .filter((l) => !users.some((u) => l.toLowerCase().includes(u.split(/[._]/)[0]) && l.length < u.length + 12))
+    .map((l) => l.replace(/^[^가-힣A-Za-z]+|[^가-힣A-Za-z0-9!?]+$/g, '').replace(/['"‘’“”]/g, '').trim())
+    .filter((l) => l.length >= 3)
+    .slice(0, 5);
+
+  const queries = [...new Set([...keys, music, ...users.slice(0, 1)].filter(Boolean))].slice(0, 6);
+  const hashtags = [...new Set((raw.match(/#[^\s#]+/g) || []).map((h) => h.slice(1)))].slice(0, 8);
   return {
-    summary: queries.length ? '사진 속 글자로 검색어를 만들었어요. 맞는 걸 고르거나 직접 고쳐주세요.' : '사진에서 글자를 찾지 못했어요. 검색어를 직접 입력하거나 ⚙️ 설정에 Gemini 키를 넣어주세요.',
+    summary: users.length ? '' : '사진에서 계정 아이디를 찾지 못했어요. 화면에 보이는 아이디를 직접 입력하면 원본을 바로 찾을 수 있어요.',
     queries, hashtags, ocr: lines.join('\n'),
+    platform, usernames: users.slice(0, 4), key: keys[0] || '', keys, music,
   };
 }
 
+// ---------- 원본 영상 찾기 ----------
+const PLATFORM_NAME = { instagram: '인스타그램', tiktok: '틱톡', youtube: '유튜브', unknown: '' };
+let currentPlatform = 'unknown';
+
+function showOrigin(d) {
+  currentPlatform = d.platform || 'unknown';
+  $('origin').classList.remove('hidden');
+  const bits = [];
+  if (PLATFORM_NAME[currentPlatform]) bits.push(`${PLATFORM_NAME[currentPlatform]} 화면으로 보여요.`);
+  bits.push(d.usernames?.length ? '계정 영상 목록을 열어 같은 썸네일을 찾으면 그게 원본이에요.' : '아이디를 입력하면 그 계정의 영상 목록을 바로 열 수 있어요.');
+  $('originInfo').textContent = bits.join(' ');
+
+  $('user').value = d.usernames?.[0] || '';
+  $('userChips').innerHTML = '';
+  (d.usernames || []).forEach((u) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (u === $('user').value ? ' on' : '');
+    b.textContent = '@' + u;
+    b.onclick = () => { $('user').value = u; [...$('userChips').children].forEach((c) => c.classList.toggle('on', c === b)); updateOrigin(); };
+    $('userChips').appendChild(b);
+  });
+  $('key').value = d.key || '';
+  $('musicInfo').textContent = d.music ? `🎵 음악: ${d.music}` : '';
+
+  // 감지된 플랫폼 버튼을 맨 앞으로
+  const order = { instagram: ['pIg', 'pTt', 'pYt'], tiktok: ['pTt', 'pIg', 'pYt'], youtube: ['pYt', 'pIg', 'pTt'] }[currentPlatform];
+  if (order) order.forEach((id) => $('pG').before($(id)));
+  updateOrigin();
+}
+
+function updateOrigin() {
+  const u = $('user').value.trim().replace(/^@/, '').replace(/\s+/g, '');
+  const k = $('key').value.trim();
+  const ue = encodeURIComponent(u);
+  const g = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  $('pIg').href = `https://www.instagram.com/${ue}/reels/`;
+  $('pTt').href = `https://www.tiktok.com/@${ue}`;
+  $('pYt').href = `https://www.youtube.com/@${ue}/shorts`;
+  $('pG').href = g(`"${u}" ${PLATFORM_NAME[currentPlatform] || ''}`.trim());
+  ['pIg', 'pTt', 'pYt', 'pG'].forEach((id) => $(id).style.opacity = u ? 1 : .4);
+
+  const base = [u && `"${u}"`, k && `"${k}"`].filter(Boolean).join(' ');
+  $('xIg').href = g(`${base} site:instagram.com`);
+  $('xTt').href = g(`${base} site:tiktok.com`);
+  $('xYt').href = g(`${base} site:youtube.com`);
+  $('xAll').href = g(base);
+  ['xIg', 'xTt', 'xYt', 'xAll'].forEach((id) => $(id).style.opacity = base ? 1 : .4);
+}
+$('user').addEventListener('input', () => {
+  [...$('userChips').children].forEach((c) => c.classList.toggle('on', c.textContent === '@' + $('user').value.trim()));
+  updateOrigin();
+});
+$('key').addEventListener('input', updateOrigin);
+
 // ---------- 결과 표시 & 검색 링크 ----------
 function showResult(data) {
+  showOrigin(data);
   $('result').classList.remove('hidden');
   $('summary').textContent = data.summary || '';
   $('ocrBox').classList.toggle('hidden', !data.ocr);
@@ -420,7 +595,7 @@ function showResult(data) {
   });
 
   updateLinks();
-  $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('origin').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function updateLinks() {
@@ -432,13 +607,13 @@ function updateLinks() {
   $('goIg').href = `https://www.instagram.com/explore/search/keyword/?q=${e}`;
   $('goGTt').href = `https://www.google.com/search?q=${encodeURIComponent(q + ' site:tiktok.com')}`;
   $('goGIg').href = `https://www.google.com/search?q=${encodeURIComponent(q + ' site:instagram.com')}`;
-  document.querySelectorAll('.target').forEach((a) => a.style.opacity = q ? 1 : .4);
+  document.querySelectorAll('#result .target').forEach((a) => a.style.opacity = q ? 1 : .4);
 }
 $('query').addEventListener('input', () => {
   [...$('chips').children].forEach((c) => c.classList.toggle('on', c.textContent === $('query').value.trim()));
   updateLinks();
 });
-document.querySelectorAll('.target').forEach((a) => a.addEventListener('click', (ev) => {
+document.querySelectorAll('#result .target').forEach((a) => a.addEventListener('click', (ev) => {
   if (!$('query').value.trim()) { ev.preventDefault(); setStatus('검색어를 먼저 고르거나 입력하세요.', true); }
 }));
 
