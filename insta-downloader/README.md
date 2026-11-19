@@ -67,5 +67,12 @@ Mac/Linux: `./run.sh`
 
 인스타 구조가 바뀌어 갑자기 안 되면 `run.bat`을 다시 실행하세요 (클라우드는 Render에서 **Manual Deploy → Restart**) — 실행할 때마다 다운로드 엔진(yt-dlp)을 최신으로 업데이트합니다.
 
+## 틱톡 화질 올리기 (선택)
+틱톡 웹은 로그인하지 않으면 720p까지만 주는 경우가 많습니다. 내 틱톡 계정으로 로그인한 상태로 받으면 더 높은 화질이 나올 수 있어요.
+1. PC 크롬에서 tiktok.com 로그인 → F12 → Application → Cookies → `https://www.tiktok.com` → **`sessionid`** 값 복사
+2. Render → 서비스 → Environment → Add → Key `TT_SESSIONID`, Value 복사한 값 → Save
+- 다운로드가 끝나면 화면에 **화질(예: 1080×1920)**이 표시되니 바로 확인할 수 있어요.
+- 로그인해도 영상에 따라 720p가 최고일 수 있습니다.
+
 ## 주의
 본인 콘텐츠나 허락받은 콘텐츠만 다운로드하세요. 다른 사람의 영상을 무단으로 재업로드하면 저작권 침해가 될 수 있습니다.

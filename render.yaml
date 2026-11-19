@@ -13,3 +13,5 @@ services:
         sync: false
       - key: IG_COOKIES
         sync: false
+      - key: TT_SESSIONID
+        sync: false

@@ -11,6 +11,8 @@
 환경변수 (클라우드용, 모두 선택)
   IG_SESSIONID 인스타 로그인 쿠키 중 sessionid 값 하나 (가장 간단. 무음/로그인 요구 해결)
   IG_COOKIES   cookies.txt 내용 전체 (IG_SESSIONID 대신 써도 됨)
+  TT_SESSIONID 틱톡 로그인 쿠키 중 sessionid 값 하나 (로그인 상태로 더 높은 화질 시도)
+  TT_COOKIES   틱톡 cookies.txt 내용 전체 (TT_SESSIONID 대신 써도 됨)
   ACCESS_KEY   접속 비밀번호 (남이 내 서버/계정을 쓰지 못하게)
 """
 from __future__ import annotations
@@ -29,22 +31,41 @@ from urllib.parse import quote
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 BASE_DIR = Path(__file__).resolve().parent
-COOKIES_FILE = BASE_DIR / "cookies.txt"  # (선택) 비공개/로그인 필요 게시물용
 ACCESS_KEY = os.environ.get("ACCESS_KEY", "").strip()
 
-if os.environ.get("IG_COOKIES", "").strip():
-    # 클라우드에서는 파일 대신 환경변수로 쿠키를 받음
-    COOKIES_FILE = Path(tempfile.gettempdir()) / "ig_cookies.txt"
-    COOKIES_FILE.write_text(os.environ["IG_COOKIES"].strip() + "\n", encoding="utf-8")
-elif os.environ.get("IG_SESSIONID", "").strip():
-    # sessionid 값 하나만으로 cookies.txt를 만들어 줌
-    _sid = os.environ["IG_SESSIONID"].strip().strip('"').removeprefix("sessionid=")
-    COOKIES_FILE = Path(tempfile.gettempdir()) / "ig_cookies.txt"
-    COOKIES_FILE.write_text(
-        "# Netscape HTTP Cookie File\n"
-        f".instagram.com\tTRUE\t/\tTRUE\t2147483647\tsessionid\t{_sid}\n",
-        encoding="utf-8",
-    )
+
+def _env(name: str) -> str:
+    return os.environ.get(name, "").strip().strip('"')
+
+
+def _session_lines(domain: str, value: str, names: tuple[str, ...]) -> str:
+    value = re.sub(r"^\w+=", "", value)  # "sessionid=xxx" 형태로 넣어도 OK
+    return "".join(f"{domain}\tTRUE\t/\tTRUE\t2147483647\t{n}\t{value}\n" for n in names)
+
+
+def _build_cookie_file() -> Path:
+    """cookies.txt(PC) + 환경변수(클라우드)의 로그인 쿠키를 한 파일로 합침"""
+    local = BASE_DIR / "cookies.txt"
+    parts = [local.read_text(encoding="utf-8")] if local.exists() else []
+    if _env("IG_COOKIES"):
+        parts.append(_env("IG_COOKIES"))
+    elif _env("IG_SESSIONID"):
+        parts.append(_session_lines(".instagram.com", _env("IG_SESSIONID"), ("sessionid",)))
+    if _env("TT_COOKIES"):
+        parts.append(_env("TT_COOKIES"))
+    elif _env("TT_SESSIONID"):
+        # 틱톡은 같은 값을 여러 이름으로 씀
+        parts.append(_session_lines(".tiktok.com", _env("TT_SESSIONID"), ("sessionid", "sessionid_ss", "sid_tt")))
+    if not parts:
+        return local  # 존재하지 않는 경로 → 쿠키 없이 동작
+    path = Path(tempfile.gettempdir()) / "dl_cookies.txt"
+    body = "\n".join(x.strip() for x in parts)
+    path.write_text("# Netscape HTTP Cookie File\n" + body + "\n", encoding="utf-8")
+    return path
+
+
+COOKIES_FILE = _build_cookie_file()
+TIKTOK_LOGGED_IN = bool(_env("TT_SESSIONID") or _env("TT_COOKIES"))
 SAVE_DIR = BASE_DIR / "downloads"         # 서버 쪽에도 사본을 남김
 
 IG_RE = re.compile(
@@ -252,6 +273,22 @@ def _load_cookies_into(L, path: Path) -> None:
 VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 
 
+def video_resolution(path: Path) -> str:
+    """영상 해상도 (예: 1080x1920). 알 수 없으면 빈 문자열"""
+    ff = ffmpeg_path()
+    if not ff or path.suffix.lower() not in VIDEO_EXTS:
+        return ""
+    import subprocess
+
+    try:
+        out = subprocess.run([ff, "-hide_banner", "-i", str(path)],
+                             capture_output=True, text=True, timeout=30).stderr
+    except Exception:  # noqa: BLE001
+        return ""
+    m = re.search(r"Video:.*?(\d{3,5})x(\d{3,5})", out)
+    return f"{m.group(1)}x{m.group(2)}" if m else ""
+
+
 def has_audio(path: Path) -> bool:
     """영상 파일에 소리 트랙이 있는지 ffmpeg로 확인 (확인 불가면 True로 간주)"""
     if path.suffix.lower() not in VIDEO_EXTS:
@@ -300,7 +337,8 @@ def fetch(url: str) -> tuple[list[Path], Path, str, str]:
         clean_url, shortcode, order = url, "", ["ytdlp"]
         prefix = site_name(url)
         if prefix == "tiktok":
-            order = ["tikwm", "ytdlp"]  # 원본 화질 API 먼저, 안 되면 yt-dlp
+            # 내 틱톡 계정으로 로그인돼 있으면 yt-dlp(로그인 상태의 틱톡 웹)를 먼저 시도
+            order = ["ytdlp", "tikwm"] if TIKTOK_LOGGED_IN else ["tikwm", "ytdlp"]
 
     for method in order:
         sub = workdir / method
@@ -379,6 +417,7 @@ def api_download():
 
     try:
         SAVE_DIR.mkdir(exist_ok=True)
+        resolution = video_resolution(files[0]) if len(files) == 1 else ""
         if len(files) == 1:
             f = files[0]
             name = f"{prefix}{f.suffix.lower()}"
@@ -409,9 +448,11 @@ def api_download():
     resp.headers["Content-Length"] = str(out.stat().st_size)
     resp.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(name)}"
     resp.headers["X-File-Count"] = str(len(files))
+    if resolution:
+        resp.headers["X-Resolution"] = resolution
     if warning:
         resp.headers["X-Warning"] = quote(warning)
-    resp.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-File-Count, X-Warning"
+    resp.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-File-Count, X-Warning, X-Resolution"
     return resp
 
 

@@ -171,9 +171,10 @@ async function download(raw) {
 
     const mb = (blob.size / 1048576).toFixed(1);
     const warn = decodeURIComponent(res.headers.get('X-Warning') || '');
+    const resolution = (res.headers.get('X-Resolution') || '').replace(/^(\d+)x(\d+)$/, (_, w, h) => `${w}×${h}`);
     if (warn) setStatus(`저장됨: ${name} (${mb}MB)\n\n${warn}`, 'err');
-    else setStatus(`✅ 저장 완료: ${name} (${count}개, ${mb}MB)`, 'ok');
-    addHist(url, `${count}개 · ${mb}MB`, true);
+    else setStatus(`✅ 저장 완료: ${name}\n${resolution ? '화질 ' + resolution + ' · ' : ''}${count}개 · ${mb}MB`, 'ok');
+    addHist(url, `${resolution ? resolution + ' · ' : ''}${mb}MB`, true);
     done.add(url);
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
