@@ -9,7 +9,8 @@
 
 로컬 실행: python app.py  →  브라우저에서 http://127.0.0.1:5000
 환경변수 (클라우드용, 모두 선택)
-  IG_COOKIES   cookies.txt 내용 전체 (인스타가 로그인 요구할 때)
+  IG_SESSIONID 인스타 로그인 쿠키 중 sessionid 값 하나 (가장 간단. 무음/로그인 요구 해결)
+  IG_COOKIES   cookies.txt 내용 전체 (IG_SESSIONID 대신 써도 됨)
   ACCESS_KEY   접속 비밀번호 (남이 내 서버/계정을 쓰지 못하게)
 """
 from __future__ import annotations
@@ -35,6 +36,15 @@ if os.environ.get("IG_COOKIES", "").strip():
     # 클라우드에서는 파일 대신 환경변수로 쿠키를 받음
     COOKIES_FILE = Path(tempfile.gettempdir()) / "ig_cookies.txt"
     COOKIES_FILE.write_text(os.environ["IG_COOKIES"].strip() + "\n", encoding="utf-8")
+elif os.environ.get("IG_SESSIONID", "").strip():
+    # sessionid 값 하나만으로 cookies.txt를 만들어 줌
+    _sid = os.environ["IG_SESSIONID"].strip().strip('"').removeprefix("sessionid=")
+    COOKIES_FILE = Path(tempfile.gettempdir()) / "ig_cookies.txt"
+    COOKIES_FILE.write_text(
+        "# Netscape HTTP Cookie File\n"
+        f".instagram.com\tTRUE\t/\tTRUE\t2147483647\tsessionid\t{_sid}\n",
+        encoding="utf-8",
+    )
 SAVE_DIR = BASE_DIR / "downloads"         # 서버 쪽에도 사본을 남김
 
 IG_RE = re.compile(
@@ -156,20 +166,58 @@ def _load_cookies_into(L, path: Path) -> None:
 
     jar = MozillaCookieJar(str(path))
     jar.load(ignore_discard=True, ignore_expires=True)
+    sess = L.context._session
     for c in jar:
         if "instagram.com" in c.domain:
-            L.context._session.cookies.set(c.name, c.value, domain=c.domain, path=c.path)
+            # instaloader가 미리 넣어 둔 빈 쿠키(sessionid="" 등)와 겹치지 않게 먼저 지움
+            for old in [o for o in sess.cookies if o.name == c.name]:
+                sess.cookies.clear(old.domain, old.path, old.name)
+            sess.cookies.set(c.name, c.value, domain=c.domain, path=c.path)
+    if sess.cookies.get("sessionid"):
+        L.context.username = "cookie-login"  # instaloader가 로그인 상태로 동작하게
 
 
 # ---------------------------------------------------------------------- 공통
-def fetch(url: str) -> tuple[list[Path], Path, str]:
-    """반환: (파일들, 임시폴더, 파일이름 앞부분)"""
+VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
+
+
+def has_audio(path: Path) -> bool:
+    """영상 파일에 소리 트랙이 있는지 ffmpeg로 확인 (확인 불가면 True로 간주)"""
+    if path.suffix.lower() not in VIDEO_EXTS:
+        return True
+    ff = ffmpeg_path()
+    if not ff:
+        return True
+    import subprocess
+
+    try:
+        out = subprocess.run([ff, "-hide_banner", "-i", str(path)],
+                             capture_output=True, text=True, timeout=30).stderr
+    except Exception:
+        return True
+    return "Audio:" in out
+
+
+def silent_files(files: list[Path]) -> list[Path]:
+    return [f for f in files if not has_audio(f)]
+
+
+SILENT_WARNING = (
+    "⚠️ 받은 영상에 소리가 없어요. 인스타가 로그인 안 된 요청에는 소리를 빼고 주는 경우가 많습니다. "
+    "Render 설정에 IG_SESSIONID(로그인 쿠키)를 넣으면 해결돼요. "
+    "(원본 음악이 저작권 때문에 지역에서 막힌 경우일 수도 있어요)"
+)
+
+
+def fetch(url: str) -> tuple[list[Path], Path, str, str]:
+    """반환: (파일들, 임시폴더, 파일이름 앞부분, 경고문)"""
     m = ANY_URL_RE.search(url or "")
     if not m:
         raise DownloadError("링크(https://...)를 넣어 주세요.")
     url = m.group(0).rstrip(".,)")
     workdir = Path(tempfile.mkdtemp(prefix="dl_"))
     errors = []
+    silent_result: list[Path] | None = None
 
     if IG_RE.search(url):
         kind, shortcode = parse_url(url)
@@ -193,9 +241,16 @@ def fetch(url: str) -> tuple[list[Path], Path, str]:
             if files:
                 if not shortcode:  # 다른 사이트: 영상 ID를 파일 이름에
                     prefix = f"{prefix}_{safe(files[0].stem.rsplit('_', 1)[0])}"
-                return files, workdir, prefix
+                if not silent_files(files):
+                    return files, workdir, prefix, ""
+                # 소리가 없음 → 다른 방법도 시도해 보고, 다 안 되면 이걸로
+                errors.append(f"{method}: 소리 없는 영상")
+                silent_result = silent_result or files
         except Exception as e:  # noqa: BLE001
             errors.append(f"{method}: {e}")
+
+    if silent_result:
+        return silent_result, workdir, prefix, SILENT_WARNING
 
     shutil.rmtree(workdir, ignore_errors=True)
     msg = " / ".join(errors) or "받을 수 있는 영상/사진이 없습니다."
@@ -207,7 +262,7 @@ def fetch(url: str) -> tuple[list[Path], Path, str]:
                "잠시 후 다시 해 보거나 PC 버전을 써 주세요.\n\n상세: " + msg)
     elif re.search(r"login|401|403|private|rate|Please wait", msg, re.I):
         msg = ("사이트가 로그인을 요구하거나 요청을 막았습니다. 비공개 게시물이거나 요청이 너무 많을 수 있어요. "
-               "인스타라면 README의 쿠키(IG_COOKIES) 설정을 해 주세요.\n\n상세: " + msg)
+               "인스타라면 Render 설정에 IG_SESSIONID(로그인 쿠키)를 넣어 주세요.\n\n상세: " + msg)
     raise DownloadError(msg)
 
 
@@ -244,7 +299,7 @@ def api_download():
         return jsonify(error="비밀번호가 틀렸습니다.", needKey=True), 401
     url = request.args.get("url", "").strip()
     try:
-        files, workdir, prefix = fetch(url)
+        files, workdir, prefix, warning = fetch(url)
     except DownloadError as e:
         return jsonify(error=str(e)), 400
 
@@ -280,7 +335,9 @@ def api_download():
     resp.headers["Content-Length"] = str(out.stat().st_size)
     resp.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(name)}"
     resp.headers["X-File-Count"] = str(len(files))
-    resp.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-File-Count"
+    if warning:
+        resp.headers["X-Warning"] = quote(warning)
+    resp.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-File-Count, X-Warning"
     return resp
 
 
