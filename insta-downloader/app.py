@@ -163,6 +163,49 @@ def fetch_with_ytdlp(url: str, outdir: Path, allow_playlist: bool = True) -> lis
     return sorted(p for p in outdir.iterdir() if p.is_file() and not p.name.endswith(".part"))
 
 
+# ------------------------------------------------------------ tikwm (틱톡 원본)
+UA = ("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) "
+      "Chrome/130.0 Mobile Safari/537.36")
+
+
+def _save_url(sess, url: str, dest: Path) -> Path:
+    with sess.get(url, stream=True, timeout=60) as r:
+        r.raise_for_status()
+        with open(dest, "wb") as fh:
+            for chunk in r.iter_content(1024 * 1024):
+                fh.write(chunk)
+    return dest
+
+
+def fetch_with_tikwm(url: str, outdir: Path) -> list[Path]:
+    """틱톡 원본(HD, 워터마크 없음)을 주는 공개 API.
+    틱톡 웹페이지는 압축본(720p 등)만 주는 경우가 많아서 이쪽을 먼저 씀. 사진 슬라이드도 지원."""
+    import requests
+
+    sess = requests.Session()
+    sess.headers["User-Agent"] = UA
+    r = sess.post("https://www.tikwm.com/api/", data={"url": url, "hd": 1}, timeout=20)
+    r.raise_for_status()
+    j = r.json()
+    if j.get("code") != 0 or not j.get("data"):
+        raise RuntimeError(f"tikwm: {j.get('msg') or '응답 없음'}")
+    d = j["data"]
+    vid = safe(str(d.get("id") or "tiktok"))
+
+    def absolute(u: str) -> str:
+        return u if u.startswith("http") else "https://www.tikwm.com" + u
+
+    if d.get("images"):  # 사진 슬라이드
+        return [
+            _save_url(sess, absolute(u), outdir / f"{vid}_{i:02d}.jpg")
+            for i, u in enumerate(d["images"], 1)
+        ]
+    video = d.get("hdplay") or d.get("play")
+    if not video:
+        raise RuntimeError("tikwm: 영상 주소 없음")
+    return [_save_url(sess, absolute(video), outdir / f"{vid}_1.mp4")]
+
+
 # ------------------------------------------------------------- instaloader (사진)
 def fetch_with_instaloader(shortcode: str, outdir: Path) -> list[Path]:
     import instaloader
@@ -256,16 +299,19 @@ def fetch(url: str) -> tuple[list[Path], Path, str, str]:
     else:
         clean_url, shortcode, order = url, "", ["ytdlp"]
         prefix = site_name(url)
+        if prefix == "tiktok":
+            order = ["tikwm", "ytdlp"]  # 원본 화질 API 먼저, 안 되면 yt-dlp
 
     for method in order:
         sub = workdir / method
         sub.mkdir()
         try:
-            files = (
-                fetch_with_ytdlp(clean_url, sub, allow_playlist=bool(shortcode))
-                if method == "ytdlp"
-                else fetch_with_instaloader(shortcode, sub)
-            )
+            if method == "ytdlp":
+                files = fetch_with_ytdlp(clean_url, sub, allow_playlist=bool(shortcode))
+            elif method == "tikwm":
+                files = fetch_with_tikwm(clean_url, sub)
+            else:
+                files = fetch_with_instaloader(shortcode, sub)
             if files:
                 if not shortcode:  # 다른 사이트: 영상 ID를 파일 이름에
                     prefix = f"{prefix}_{safe(files[0].stem.rsplit('_', 1)[0])}"
