@@ -3,623 +3,154 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SNS 이미지 검색</title>
+<title>SNS 원본 찾기</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <meta name="theme-color" content="#0f1115">
 <style>
-  :root {
-    --bg: #0f1115; --panel: #181b22; --panel2: #20242d; --line: #2c313c;
-    --text: #e8eaf0; --muted: #9aa1ae; --accent: #ff3b5c; --accent2: #25d3c4;
-    --yt: #ff0033; --tt: #25f4ee; --ig: #d62976; --gg: #4285f4;
-  }
+  :root { --bg: #0f1115; --panel: #181b22; --panel2: #20242d; --line: #2c313c;
+    --text: #e8eaf0; --muted: #9aa1ae; --accent: #ff3b5c; --accent2: #25d3c4; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px;
     font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
   .wrap { max-width: 560px; margin: 0 auto; padding: 16px 16px 60px; }
-  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  h1 { margin: 0; font-size: 20px; }
+  h1 { margin: 0 0 14px; font-size: 20px; }
   h1 span { color: var(--accent); }
-  .iconbtn { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 7px 11px; font-size: 14px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
   .hidden { display: none !important; }
   .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center;
     min-height: 150px; border: 2px dashed var(--line); border-radius: 14px; color: var(--muted); padding: 16px; }
   .drop b { color: var(--text); font-size: 16px; }
-  .preview { width: 100%; max-height: 300px; object-fit: contain; border-radius: 10px; background: #000; display: block; }
+  .preview { width: 100%; max-height: 380px; object-fit: contain; border-radius: 10px; background: #000; display: block; }
   button { font-family: inherit; }
-  .btn { width: 100%; border: none; border-radius: 12px; padding: 13px; font-size: 15px; font-weight: 600; color: #fff; background: var(--accent); }
-  .btn.ghost { background: var(--panel2); border: 1px solid var(--line); color: var(--text); font-weight: 500; }
-  .btn:disabled { opacity: .5; }
-  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .btn { width: 100%; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; color: #fff; background: var(--accent); margin-top: 10px; }
+  .btn.ghost { background: var(--panel2); border: 1px solid var(--line); color: var(--text); font-weight: 500; font-size: 15px; }
   .status { color: var(--muted); font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
   .status.err { color: var(--accent); }
-  .summary { font-size: 14px; line-height: 1.5; margin: 0 0 10px; }
-  .label { color: var(--muted); font-size: 12px; margin: 12px 0 6px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 999px; padding: 7px 12px; font-size: 14px; }
-  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  input[type=text], input[type=password], select { width: 100%; background: var(--bg); color: var(--text);
-    border: 1px solid var(--line); border-radius: 10px; padding: 11px; font-size: 15px; font-family: inherit; }
-  .q { margin-top: 12px; }
-  .targets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-  .target { display: flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; color: #fff;
-    border-radius: 12px; padding: 13px 8px; font-weight: 600; font-size: 15px; background: var(--panel2); border: 1px solid var(--line); }
-  .target.yt { border-color: var(--yt); } .target.yt i { color: var(--yt); }
-  .target.tt { border-color: var(--tt); } .target.tt i { color: var(--tt); }
-  .target.ig { border-color: var(--ig); } .target.ig i { color: var(--ig); }
-  .target.gg { border-color: var(--gg); } .target.gg i { color: var(--gg); }
-  .target i { font-style: normal; }
-  .small { font-size: 12px; color: var(--muted); line-height: 1.5; }
-  .small a { color: var(--accent2); }
+  .small { font-size: 13px; color: var(--muted); line-height: 1.6; }
   ol.small { padding-left: 18px; margin: 6px 0; }
+  .small b { color: var(--text); }
   .pastebox { margin-top: 10px; min-height: 64px; border: 2px dashed var(--accent2); border-radius: 12px; padding: 12px;
     color: var(--text); text-align: center; outline: none; overflow: hidden; max-height: 120px; }
   .pastebox:empty::before { content: attr(data-ph); color: var(--muted); }
-  .pastebox img { max-height: 90px; }
-  .ocr { font-size: 12px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px; max-height: 90px; overflow: auto; white-space: pre-wrap; }
+  .kw { display: inline-block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; color: var(--text); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>📸 SNS <span>이미지 검색</span></h1>
-    <button class="iconbtn" id="settingsBtn">⚙️ 설정</button>
-  </header>
+  <h1>🎯 SNS <span>원본 영상 찾기</span></h1>
 
-  <!-- 설정 -->
-  <section class="card hidden" id="settings">
-    <div class="label" style="margin-top:0">Gemini API 키 (무료)</div>
-    <input type="password" id="keyInput" placeholder="AIza..." autocomplete="off">
-    <ol class="small">
-      <li><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a> 접속 → 구글 로그인</li>
-      <li><b>API 키 만들기(Create API key)</b> → 복사 → 여기에 붙여넣기</li>
-      <li>카드 등록 없이 무료 한도 안에서만 동작합니다 (결제 설정을 하지 않으면 요금이 나오지 않아요)</li>
-    </ol>
-    <div class="label">모델</div>
-    <input type="text" id="modelInput" placeholder="gemini-flash-latest">
-    <p class="small">키가 없으면 사진 속 <b>글자만</b> 읽어서 검색어를 만듭니다(정확도 낮음).<br>
-      키와 사진은 이 폰의 브라우저에만 저장되고, 분석할 때만 구글(Gemini)로 전송됩니다. 무료 등급은 구글이 데이터를 서비스 개선에 쓸 수 있으니 민감한 사진은 피하세요.</p>
-    <div class="row2">
-      <button class="btn ghost" id="closeSettings">닫기</button>
-      <button class="btn" id="saveSettings">저장</button>
-    </div>
-  </section>
-
-  <!-- 이미지 선택 -->
   <section class="card">
     <label class="drop" id="drop" for="fileInput">
       <span style="font-size:34px">🖼️</span>
       <b>캡처 사진 선택</b>
-      <span class="small">또는 갤러리/스크린샷에서 <b>공유 → SNS검색</b></span>
+      <span class="small">또는 스크린샷에서 <b>공유 → SNS검색</b></span>
     </label>
-    <button class="btn" id="pasteBtn" style="margin-top:10px">📋 캡처한 사진 붙여넣기</button>
-    <div id="pasteBox" class="pastebox hidden" contenteditable="true" inputmode="none"
-      data-ph="여기를 길게 눌러 → 붙여넣기"></div>
+    <button class="btn ghost" id="pasteBtn">📋 캡처한 사진 붙여넣기</button>
+    <div id="pasteBox" class="pastebox hidden" contenteditable="true" inputmode="none" data-ph="여기를 길게 눌러 → 붙여넣기"></div>
     <input type="file" id="fileInput" accept="image/*" class="hidden">
-    <img id="preview" class="preview hidden" alt="선택한 이미지">
-    <div class="row2 hidden" id="imgActions">
-      <button class="btn ghost" id="changeBtn">다른 사진</button>
-      <button class="btn ghost" id="lensBtn">🔍 구글 렌즈로</button>
-    </div>
-    <button class="btn hidden" id="analyzeBtn" style="margin-top:10px">✨ 원본 영상 찾기</button>
+
+    <img id="preview" class="preview hidden" alt="선택한 사진">
+    <button class="btn hidden" id="findBtn">🔍 이 영상 원본 찾기</button>
+    <button class="btn ghost hidden" id="changeBtn">다른 사진</button>
     <div class="status" id="status"></div>
   </section>
 
-  <!-- 결과 -->
-  <section class="card hidden" id="origin">
-    <h2 style="margin:0 0 4px;font-size:17px">🎯 원본 영상 찾기</h2>
-    <p class="small" id="originInfo" style="margin:0"></p>
-    <div class="label">계정 아이디 (틀리면 고쳐주세요)</div>
-    <input type="text" id="user" placeholder="화면에 보이는 아이디, 예: home_temterior" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <div class="chips" id="userChips" style="margin-top:6px"></div>
-    <div class="label">① 이 계정 영상 목록 열기 → 같은 썸네일 찾기</div>
-    <div class="targets">
-      <a class="target ig" id="pIg" target="_blank" rel="noopener"><i>◎</i> 인스타 릴스</a>
-      <a class="target tt" id="pTt" target="_blank" rel="noopener"><i>♪</i> 틱톡 계정</a>
-      <a class="target yt" id="pYt" target="_blank" rel="noopener"><i>▶</i> 유튜브 쇼츠</a>
-      <a class="target gg" id="pG" target="_blank" rel="noopener"><i>G</i> 계정 검색</a>
-    </div>
-    <div class="label">② 자막·캡션으로 정확히 찾기</div>
-    <input type="text" id="key" placeholder="영상 속 자막/캡션, 예: 창가에 흔들의자">
-    <div class="targets">
-      <a class="target gg" id="xIg" target="_blank" rel="noopener"><i>G</i> 인스타에서</a>
-      <a class="target gg" id="xTt" target="_blank" rel="noopener"><i>G</i> 틱톡에서</a>
-      <a class="target gg" id="xYt" target="_blank" rel="noopener"><i>G</i> 유튜브에서</a>
-      <a class="target gg" id="xAll" target="_blank" rel="noopener"><i>G</i> 전체</a>
-    </div>
-    <p class="small" id="musicInfo"></p>
-    <p class="small">③ 그래도 없으면 위의 <b>🔍 구글 렌즈로</b> → 렌즈 결과 위 검색창에 <b>instagram</b> 추가</p>
-  </section>
-
-  <section class="card hidden" id="result">
-    <p class="summary" id="summary"></p>
-    <div id="ocrBox" class="hidden"><div class="label">사진 속 글자</div><div class="ocr" id="ocrText"></div></div>
-    <div class="label">비슷한 영상 검색어 (눌러서 선택)</div>
-    <div class="chips" id="chips"></div>
-    <div class="q">
-      <input type="text" id="query" placeholder="검색어를 직접 입력/수정해도 돼요">
-    </div>
-    <div class="targets">
-      <a class="target yt" id="goYt" target="_blank" rel="noopener"><i>▶</i> 유튜브</a>
-      <a class="target yt" id="goShorts" target="_blank" rel="noopener"><i>▶</i> 쇼츠</a>
-      <a class="target tt" id="goTt" target="_blank" rel="noopener"><i>♪</i> 틱톡</a>
-      <a class="target ig" id="goIg" target="_blank" rel="noopener"><i>◎</i> 인스타</a>
-    </div>
-    <div class="label">구글에서 SNS 게시물만 찾기</div>
-    <div class="targets">
-      <a class="target gg" id="goGTt" target="_blank" rel="noopener"><i>G</i> 틱톡 게시물</a>
-      <a class="target gg" id="goGIg" target="_blank" rel="noopener"><i>G</i> 인스타 게시물</a>
-    </div>
-    <div class="label" id="tagLabel">해시태그</div>
-    <div class="chips" id="tags"></div>
-  </section>
-
-  <section class="card small" id="help">
-    <b style="color:var(--text)">처음 쓰는 법</b>
+  <section class="card small">
+    <b>찾는 방법</b>
     <ol class="small">
-      <li>크롬 메뉴(⋮) → <b>홈 화면에 추가</b> 또는 <b>앱 설치</b></li>
-      <li>⚙️ 설정에 Gemini 무료 키 넣기 (없어도 글자 인식으로 동작)</li>
-      <li>스크린샷 → <b>공유</b> → <b>SNS검색</b> 선택 → 자동 분석</li>
+      <li><b>🔍 이 영상 원본 찾기</b> → 목록에서 <b>Google 렌즈</b>(또는 <b>Google</b>) 선택</li>
+      <li>렌즈 결과 위 검색창에 <span class="kw">instagram</span> <span class="kw">tiktok</span> <span class="kw">youtube</span> 중 하나를 추가하면 그 SNS 게시물만 나와요</li>
+      <li>렌즈 화면에서 네모 칸을 <b>영상 부분에만</b> 맞추면 더 잘 찾아요 (버튼·댓글 제외)</li>
     </ol>
-    원본 게시물을 정확히 찾고 싶으면 <b>🔍 구글 렌즈로</b> 버튼 → 렌즈 결과 위 검색창에 <b>tiktok</b>이나 <b>instagram</b>을 추가하세요.
+    처음 한 번: 크롬 ⋮ → <b>앱 설치</b> 해두면 스크린샷 공유 목록에 <b>SNS검색</b>이 생겨요.
   </section>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const store = {
-  get(k, d = '') { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
-};
-const DEFAULT_MODEL = 'gemini-flash-latest';
 let currentFile = null;
-let selected = new Set();
-
-// ---------- 설정 ----------
-$('settingsBtn').onclick = () => {
-  $('keyInput').value = store.get('geminiKey');
-  $('modelInput').value = store.get('geminiModel');
-  $('settings').classList.toggle('hidden');
-};
-$('closeSettings').onclick = () => $('settings').classList.add('hidden');
-$('saveSettings').onclick = () => {
-  store.set('geminiKey', $('keyInput').value.trim());
-  store.set('geminiModel', $('modelInput').value.trim());
-  $('settings').classList.add('hidden');
-  setStatus('설정을 저장했어요.');
-};
 
 function setStatus(msg, err = false) {
   $('status').textContent = msg;
   $('status').className = 'status' + (err ? ' err' : '');
 }
 
-// ---------- 이미지 받기 ----------
-$('fileInput').onchange = (e) => { if (e.target.files[0]) setImage(e.target.files[0], true); };
-$('changeBtn').onclick = () => $('fileInput').click();
-
-function setImage(file, auto) {
+function setImage(file) {
   currentFile = file;
   $('preview').src = URL.createObjectURL(file);
-  $('preview').classList.remove('hidden');
-  $('drop').classList.add('hidden');
-  $('pasteBtn').classList.add('hidden');
-  $('pasteBox').classList.add('hidden');
-  $('imgActions').classList.remove('hidden');
-  $('analyzeBtn').classList.remove('hidden');
-  $('help').classList.add('hidden');
-  $('result').classList.add('hidden');
-  $('origin').classList.add('hidden');
+  ['preview', 'findBtn', 'changeBtn'].forEach((id) => $(id).classList.remove('hidden'));
+  ['drop', 'pasteBtn', 'pasteBox'].forEach((id) => $(id).classList.add('hidden'));
   setStatus('');
-  if (auto) analyze();
 }
 
-// 다른 앱에서 "공유"로 들어온 이미지
+$('fileInput').onchange = (e) => { if (e.target.files[0]) setImage(e.target.files[0]); };
+$('changeBtn').onclick = () => $('fileInput').click();
+
+// ---------- 구글 렌즈로 넘기기 ----------
+$('findBtn').onclick = async () => {
+  if (!currentFile) return;
+  const type = currentFile.type || 'image/png';
+  const file = new File([currentFile], 'capture.' + (type.split('/')[1] || 'png'), { type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      setStatus('렌즈 결과 위 검색창에 instagram / tiktok / youtube 를 추가해 보세요.');
+    } catch (e) {
+      if (e.name !== 'AbortError') setStatus('공유 실패: ' + e.message, true);
+    }
+  } else {
+    setStatus('이 브라우저는 사진 공유를 지원하지 않아요.\n안드로이드 크롬에서 열거나, 갤러리에서 사진을 열고 렌즈 버튼을 눌러주세요.', true);
+  }
+};
+
+// ---------- 다른 앱에서 "공유"로 들어온 사진 ----------
 async function loadShared() {
   if (!new URLSearchParams(location.search).has('shared')) return;
   history.replaceState(null, '', location.pathname);
   try {
     const cache = await caches.open('shared-image');
     const res = await cache.match('./shared-image');
-    if (!res) return setStatus('공유된 이미지를 찾지 못했어요. 다시 공유해 주세요.', true);
+    if (!res) return setStatus('공유된 사진을 찾지 못했어요. 다시 공유해 주세요.', true);
     const blob = await res.blob();
     await cache.delete('./shared-image');
-    setImage(new File([blob], 'shared.' + (blob.type.split('/')[1] || 'png'), { type: blob.type }), true);
-  } catch (e) { setStatus('공유 이미지 읽기 실패: ' + e.message, true); }
+    setImage(new File([blob], 'shared.' + (blob.type.split('/')[1] || 'png'), { type: blob.type }));
+    setStatus('아래 빨간 버튼을 누르면 구글 렌즈로 원본을 찾아요.');
+  } catch (e) { setStatus('공유 사진 읽기 실패: ' + e.message, true); }
 }
 
 // ---------- 클립보드 붙여넣기 ----------
-// 1) 버튼: 클립보드에서 바로 이미지 읽기 (크롬이 "클립보드 허용?"을 물으면 허용)
 $('pasteBtn').onclick = async () => {
   try {
     if (!navigator.clipboard?.read) throw new Error('unsupported');
-    const items = await navigator.clipboard.read();
-    for (const item of items) {
+    for (const item of await navigator.clipboard.read()) {
       const type = item.types.find((t) => t.startsWith('image/'));
-      if (type) {
-        const blob = await item.getType(type);
-        $('pasteBox').classList.add('hidden');
-        return setImage(new File([blob], 'clipboard.' + type.split('/')[1], { type }), true);
-      }
+      if (type) return setImage(new File([await item.getType(type)], 'clipboard.' + type.split('/')[1], { type }));
     }
     setStatus('클립보드에 사진이 없어요. 캡처 후 "복사"를 먼저 눌러주세요.\n또는 아래 칸을 길게 눌러 붙여넣기 해보세요.', true);
   } catch {
     setStatus('바로 읽기가 막혀 있어요. 아래 점선 칸을 길게 눌러 → 붙여넣기 하세요.');
   }
-  // 2) 대안: 점선 칸을 길게 눌러 붙여넣기 (키보드 클립보드도 가능)
   $('pasteBox').classList.remove('hidden');
   $('pasteBox').focus();
 };
-
-// 붙여넣기 이벤트 (점선 칸, 또는 화면 어디서든)
 document.addEventListener('paste', (e) => {
   const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
-  if (item) {
-    e.preventDefault();
-    $('pasteBox').classList.add('hidden');
-    setImage(item.getAsFile(), true);
-  }
+  if (item) { e.preventDefault(); setImage(item.getAsFile()); }
 });
-// 일부 키보드는 paste 이벤트 대신 <img>를 직접 넣음 → 그 이미지를 가져옴
 $('pasteBox').addEventListener('input', async () => {
   const img = $('pasteBox').querySelector('img');
   $('pasteBox').innerHTML = '';
   if (!img) return setStatus('사진이 아니에요. 캡처 사진을 복사한 뒤 다시 붙여넣어 주세요.', true);
   try {
     const blob = await (await fetch(img.src)).blob();
-    $('pasteBox').classList.add('hidden');
-    setImage(new File([blob], 'pasted.' + (blob.type.split('/')[1] || 'png'), { type: blob.type || 'image/png' }), true);
+    setImage(new File([blob], 'pasted.' + (blob.type.split('/')[1] || 'png'), { type: blob.type || 'image/png' }));
   } catch { setStatus('붙여넣은 사진을 읽지 못했어요. "캡처 사진 선택"으로 골라주세요.', true); }
 });
 
-// ---------- 구글 렌즈로 넘기기 (안드로이드 공유창) ----------
-$('lensBtn').onclick = async () => {
-  if (!currentFile) return;
-  const file = new File([currentFile], 'image.' + (currentFile.type.split('/')[1] || 'png'), { type: currentFile.type || 'image/png' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file] }); } catch {}
-    setStatus('공유 목록에서 "Google 렌즈" 또는 "Google"을 선택하세요.');
-  } else {
-    setStatus('이 브라우저는 이미지 공유를 지원하지 않아요. 구글 포토/갤러리에서 사진을 열고 렌즈 버튼을 눌러주세요.', true);
-  }
-};
-
-// ---------- 분석 ----------
-$('analyzeBtn').onclick = () => analyze();
-
-async function analyze() {
-  if (!currentFile) return;
-  const key = store.get('geminiKey');
-  $('analyzeBtn').disabled = true;
-  try {
-    if (key) {
-      try {
-        setStatus('AI가 사진을 분석하는 중… (몇 초 걸려요)');
-        const data = await geminiAnalyze(currentFile, key, store.get('geminiModel') || DEFAULT_MODEL);
-        showResult(data);
-        setStatus('');
-        return;
-      } catch (e) {
-        setStatus('AI 분석 실패: ' + e.message + '\n→ 글자 인식으로 대신 시도할게요…', true);
-      }
-    } else {
-      setStatus('API 키가 없어 사진 속 글자만 읽는 중… (처음엔 언어 데이터를 내려받아 20초쯤 걸려요)');
-    }
-    const data = await ocrAnalyze(currentFile);
-    showResult(data);
-    setStatus(key ? $('status').textContent.split('\n')[0] : '팁: ⚙️ 설정에 Gemini 무료 키를 넣으면 사물·인물·장소까지 알아봐요.');
-  } catch (e) {
-    setStatus('분석 실패: ' + e.message + '\n아래 칸에 검색어를 직접 입력해도 돼요.', true);
-    showResult({ summary: '', queries: [], hashtags: [], usernames: [], platform: 'unknown' });
-  } finally {
-    $('analyzeBtn').disabled = false;
-  }
-}
-
-// 이미지를 줄여서 base64 JPEG로 (전송량·속도 절약)
-function toJpegBase64(file, max = 1280) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const s = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      resolve(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
-    };
-    img.onerror = () => reject(new Error('이미지를 열 수 없어요'));
-    img.src = URL.createObjectURL(file);
-  });
-}
-
-const PROMPT = `이 이미지는 사용자가 휴대폰으로 캡처한 SNS(인스타 릴스/틱톡/유튜브 쇼츠 등) 화면일 가능성이 높아. 목표는 "이 캡처가 나온 바로 그 원본 영상"을 찾는 거야.
-화면 속 글자를 한 글자도 틀리지 않게 읽어줘. 특히 계정 아이디는 밑줄(_)과 마침표(.)를 정확히 구분해.
-다음 JSON 형식으로만 답해:
-{
-  "platform": "instagram | tiktok | youtube | unknown (화면 UI로 판단)",
-  "username": "화면에 보이는 게시자 계정 아이디 그대로 (@ 없이, 없으면 빈 문자열)",
-  "caption": "게시물 설명/캡션 글자 그대로 (없으면 빈 문자열)",
-  "overlay_text": "영상 위에 얹힌 자막 글자 그대로 (없으면 빈 문자열)",
-  "music": "음악 정보 글자 그대로 (없으면 빈 문자열)",
-  "summary": "이미지 내용 한국어 한두 문장",
-  "queries": ["비슷한 영상을 찾을 검색어 4~6개, 구체적인 것부터"],
-  "hashtags": ["# 없이 해시태그 4~8개"]
-}`;
-
-async function geminiAnalyze(file, key, model) {
-  const b64 = await toJpegBase64(file, 1600);
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({
-      contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: b64 } }, { text: PROMPT }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-    }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = json.error?.message || res.statusText;
-    if (res.status === 429) throw new Error('무료 사용 한도를 넘었어요. 잠시 후(또는 내일) 다시 시도하세요.');
-    if (res.status === 400 && /API key/i.test(msg)) throw new Error('API 키가 올바르지 않아요. 설정을 확인하세요.');
-    if (res.status === 404) throw new Error(`모델 "${model}"을 찾을 수 없어요. 설정에서 모델 이름을 바꿔보세요.`);
-    throw new Error(`${res.status} ${msg}`);
-  }
-  const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error('AI 응답을 이해하지 못했어요');
-  const d = JSON.parse(m[0]);
-  const u = String(d.username || '').replace(/^@/, '').trim();
-  return {
-    summary: d.summary || '',
-    queries: (d.queries || []).filter(Boolean),
-    hashtags: (d.hashtags || []).map((h) => String(h).replace(/^#/, '').replace(/\s+/g, '')).filter(Boolean),
-    ocr: '',
-    platform: ['instagram', 'tiktok', 'youtube'].includes(d.platform) ? d.platform : 'unknown',
-    usernames: u ? [u] : [],
-    key: d.overlay_text || d.caption || '',
-    keys: [d.overlay_text, d.caption].filter(Boolean),
-    music: d.music || '',
-  };
-}
-
-// ---------- 무료·오프라인 대안: 폰 안에서 글자 인식 (Tesseract.js) ----------
-let tesseractLoading = null;
-function loadTesseract() {
-  if (window.Tesseract) return Promise.resolve();
-  return tesseractLoading ||= new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('글자 인식 도구를 불러오지 못했어요 (인터넷 연결 확인)'));
-    document.head.appendChild(s);
-  });
-}
-
-function loadImg(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('이미지를 열 수 없어요'));
-    img.src = URL.createObjectURL(file);
-  });
-}
-
-// 글자가 작으니 크게 키운 캔버스
-function scaledCanvas(img) {
-  const s = Math.min(3, Math.max(1, 2600 / Math.max(img.width, img.height)));
-  const c = document.createElement('canvas');
-  c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-  const ctx = c.getContext('2d');
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, c.width, c.height);
-  return c;
-}
-
-// SNS 화면의 아이디·캡션·자막은 대부분 흰 글자 → 흰 글자만 검정으로 남긴 버전
-function whiteTextCanvas(src) {
-  const c = document.createElement('canvas');
-  c.width = src.width; c.height = src.height;
-  const ctx = c.getContext('2d');
-  ctx.drawImage(src, 0, 0);
-  const im = ctx.getImageData(0, 0, c.width, c.height);
-  const p = im.data;
-  for (let i = 0; i < p.length; i += 4) {
-    const min = Math.min(p[i], p[i + 1], p[i + 2]);
-    const max = Math.max(p[i], p[i + 1], p[i + 2]);
-    const v = (min > 195 && max - min < 40) ? 0 : 255;
-    p[i] = p[i + 1] = p[i + 2] = v;
-  }
-  ctx.putImageData(im, 0, 0);
-  return c;
-}
-
-async function ocrAnalyze(file) {
-  await loadTesseract();
-  const img = await loadImg(file);
-  const big = scaledCanvas(img);
-  const worker = await Tesseract.createWorker('kor+eng');
-  try {
-    setStatus('글자 읽는 중… (1/2)');
-    const t1 = (await worker.recognize(big)).data.text;
-    setStatus('흰 글자(아이디·자막) 다시 읽는 중… (2/2)');
-    const t2 = (await worker.recognize(whiteTextCanvas(big))).data.text;
-    return parseScreenText(t2 + '\n' + t1);
-  } finally {
-    worker.terminate();
-  }
-}
-
-const UI_WORDS = /^(좋아요|댓글|공유|저장|팔로우|팔로잉|추천|구독|리믹스|답글|더 ?보기|댓글 추가.*|add comment.*|follow|following|for you|like|share|save|remix|subscribe|shorts|reels|릴스|홈|검색|프로필|친구)$/i;
-
-function parseScreenText(raw) {
-  const lines = [...new Set(raw.split('\n')
-    .map((l) => l.replace(/[|~`^*<>{}\[\]\\]/g, ' ').replace(/\s+/g, ' ').trim())
-    .filter((l) => l.length >= 2 && /[가-힣a-zA-Z]/.test(l)))];
-  const all = lines.join('\n');
-
-  // 플랫폼 추정
-  let platform = 'unknown';
-  if (/tiktok|틱톡|팔로잉\s*\|?\s*추천|for you/i.test(all)) platform = 'tiktok';
-  else if (/shorts|구독|subscribe|리믹스|유튜브|youtube/i.test(all)) platform = 'youtube';
-  else if (/댓글 ?추가|릴스|reels|instagram|인스타/i.test(all)) platform = 'instagram';
-
-  // 계정 아이디 후보: @아이디, 또는 . _ 가 들어간 영문 토큰 ("home. temterior" → home_temterior)
-  const users = [];
-  const add = (u) => { u = u.toLowerCase(); if (!users.includes(u)) users.push(u); };
-  for (const m of all.matchAll(/@\s?([A-Za-z0-9._]{2,30})/g)) add(m[1].replace(/[._]+$/, ''));
-  for (const line of lines) {
-    for (const m of line.matchAll(/([A-Za-z0-9]+(?:\s?[._]\s?|\s?[._]?\s)[A-Za-z0-9]+(?:[._][A-Za-z0-9]+)*)/g)) {
-      const rawTok = m[1];
-      if (!/[._]/.test(rawTok)) continue; // 공백만으로 이어진 일반 영어 문장은 제외
-      const hadSpace = /\s/.test(rawTok);
-      const tok = rawTok.replace(/\s/g, '');
-      if (tok.length < 4 || tok.length > 30 || !/[a-z]/i.test(tok) || /\.(com|net|kr|co|io)$/i.test(tok)) continue;
-      // 밑줄은 글자 인식에서 "." 이나 공백으로 잘 바뀜 → 밑줄 버전을 먼저
-      const under = tok.replace(/\./g, '_');
-      if (hadSpace) { add(under); add(tok); } else { add(tok); if (under !== tok) add(under); }
-    }
-  }
-
-  // 음악 줄 (♪ ♫ ♬ 아이콘이 J3, JJ, 月 등으로 읽힘)
-  const musicLine = lines.find((l) => /^(♪|♫|♬|J3|JJ|J\s|月|ㅁ\s)/.test(l) || /\s[-·•]\s.*(feel|remix|radio|official|ver|song)/i.test(l)) || '';
-  const music = musicLine.replace(/^(♪|♫|♬|J3|JJ|J|月|ㅁ)\s*/, '').trim();
-
-  // 자막/캡션 후보: 한글이 4자 이상, UI 단어·숫자줄·아이디줄 제외
-  const keys = lines
-    .filter((l) => l !== musicLine && !UI_WORDS.test(l) && (l.match(/[가-힣]/g) || []).length >= 3)
-    .filter((l) => !users.some((u) => l.toLowerCase().includes(u.split(/[._]/)[0]) && l.length < u.length + 12))
-    .map((l) => l.replace(/^[^가-힣A-Za-z]+|[^가-힣A-Za-z0-9!?]+$/g, '').replace(/['"‘’“”]/g, '').trim())
-    .filter((l) => l.length >= 3)
-    .slice(0, 5);
-
-  const queries = [...new Set([...keys, music, ...users.slice(0, 1)].filter(Boolean))].slice(0, 6);
-  const hashtags = [...new Set((raw.match(/#[^\s#]+/g) || []).map((h) => h.slice(1)))].slice(0, 8);
-  return {
-    summary: users.length ? '' : '사진에서 계정 아이디를 찾지 못했어요. 화면에 보이는 아이디를 직접 입력하면 원본을 바로 찾을 수 있어요.',
-    queries, hashtags, ocr: lines.join('\n'),
-    platform, usernames: users.slice(0, 4), key: keys[0] || '', keys, music,
-  };
-}
-
-// ---------- 원본 영상 찾기 ----------
-const PLATFORM_NAME = { instagram: '인스타그램', tiktok: '틱톡', youtube: '유튜브', unknown: '' };
-let currentPlatform = 'unknown';
-
-function showOrigin(d) {
-  currentPlatform = d.platform || 'unknown';
-  $('origin').classList.remove('hidden');
-  const bits = [];
-  if (PLATFORM_NAME[currentPlatform]) bits.push(`${PLATFORM_NAME[currentPlatform]} 화면으로 보여요.`);
-  bits.push(d.usernames?.length ? '계정 영상 목록을 열어 같은 썸네일을 찾으면 그게 원본이에요.' : '아이디를 입력하면 그 계정의 영상 목록을 바로 열 수 있어요.');
-  $('originInfo').textContent = bits.join(' ');
-
-  $('user').value = d.usernames?.[0] || '';
-  $('userChips').innerHTML = '';
-  (d.usernames || []).forEach((u) => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (u === $('user').value ? ' on' : '');
-    b.textContent = '@' + u;
-    b.onclick = () => { $('user').value = u; [...$('userChips').children].forEach((c) => c.classList.toggle('on', c === b)); updateOrigin(); };
-    $('userChips').appendChild(b);
-  });
-  $('key').value = d.key || '';
-  $('musicInfo').textContent = d.music ? `🎵 음악: ${d.music}` : '';
-
-  // 감지된 플랫폼 버튼을 맨 앞으로
-  const order = { instagram: ['pIg', 'pTt', 'pYt'], tiktok: ['pTt', 'pIg', 'pYt'], youtube: ['pYt', 'pIg', 'pTt'] }[currentPlatform];
-  if (order) order.forEach((id) => $('pG').before($(id)));
-  updateOrigin();
-}
-
-function updateOrigin() {
-  const u = $('user').value.trim().replace(/^@/, '').replace(/\s+/g, '');
-  const k = $('key').value.trim();
-  const ue = encodeURIComponent(u);
-  const g = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-  $('pIg').href = `https://www.instagram.com/${ue}/reels/`;
-  $('pTt').href = `https://www.tiktok.com/@${ue}`;
-  $('pYt').href = `https://www.youtube.com/@${ue}/shorts`;
-  $('pG').href = g(`"${u}" ${PLATFORM_NAME[currentPlatform] || ''}`.trim());
-  ['pIg', 'pTt', 'pYt', 'pG'].forEach((id) => $(id).style.opacity = u ? 1 : .4);
-
-  const base = [u && `"${u}"`, k && `"${k}"`].filter(Boolean).join(' ');
-  $('xIg').href = g(`${base} site:instagram.com`);
-  $('xTt').href = g(`${base} site:tiktok.com`);
-  $('xYt').href = g(`${base} site:youtube.com`);
-  $('xAll').href = g(base);
-  ['xIg', 'xTt', 'xYt', 'xAll'].forEach((id) => $(id).style.opacity = base ? 1 : .4);
-}
-$('user').addEventListener('input', () => {
-  [...$('userChips').children].forEach((c) => c.classList.toggle('on', c.textContent === '@' + $('user').value.trim()));
-  updateOrigin();
-});
-$('key').addEventListener('input', updateOrigin);
-
-// ---------- 결과 표시 & 검색 링크 ----------
-function showResult(data) {
-  showOrigin(data);
-  $('result').classList.remove('hidden');
-  $('summary').textContent = data.summary || '';
-  $('ocrBox').classList.toggle('hidden', !data.ocr);
-  $('ocrText').textContent = data.ocr || '';
-
-  selected = new Set(data.queries.slice(0, 1));
-  $('chips').innerHTML = '';
-  data.queries.forEach((q) => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (selected.has(q) ? ' on' : '');
-    b.textContent = q;
-    b.onclick = () => { selected = new Set([q]); [...$('chips').children].forEach((c) => c.classList.toggle('on', c === b)); $('query').value = q; updateLinks(); };
-    $('chips').appendChild(b);
-  });
-  $('query').value = data.queries[0] || '';
-
-  $('tags').innerHTML = '';
-  $('tagLabel').classList.toggle('hidden', !data.hashtags.length);
-  data.hashtags.forEach((t) => {
-    const wrap = document.createElement('span');
-    wrap.style.display = 'contents';
-    const a = (cls, href, label) => {
-      const el = document.createElement('a');
-      el.className = 'chip'; el.href = href; el.target = '_blank'; el.rel = 'noopener';
-      el.textContent = label; el.style.textDecoration = 'none';
-      if (cls) el.style.borderColor = `var(--${cls})`;
-      return el;
-    };
-    wrap.append(
-      a('tt', `https://www.tiktok.com/tag/${encodeURIComponent(t)}`, `♪ #${t}`),
-      a('ig', `https://www.instagram.com/explore/tags/${encodeURIComponent(t)}/`, `◎ #${t}`),
-    );
-    $('tags').appendChild(wrap);
-  });
-
-  updateLinks();
-  $('origin').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function updateLinks() {
-  const q = $('query').value.trim();
-  const e = encodeURIComponent(q);
-  $('goYt').href = `https://www.youtube.com/results?search_query=${e}`;
-  $('goShorts').href = `https://www.youtube.com/results?search_query=${encodeURIComponent(q + ' #shorts')}`;
-  $('goTt').href = `https://www.tiktok.com/search?q=${e}`;
-  $('goIg').href = `https://www.instagram.com/explore/search/keyword/?q=${e}`;
-  $('goGTt').href = `https://www.google.com/search?q=${encodeURIComponent(q + ' site:tiktok.com')}`;
-  $('goGIg').href = `https://www.google.com/search?q=${encodeURIComponent(q + ' site:instagram.com')}`;
-  document.querySelectorAll('#result .target').forEach((a) => a.style.opacity = q ? 1 : .4);
-}
-$('query').addEventListener('input', () => {
-  [...$('chips').children].forEach((c) => c.classList.toggle('on', c.textContent === $('query').value.trim()));
-  updateLinks();
-});
-document.querySelectorAll('#result .target').forEach((a) => a.addEventListener('click', (ev) => {
-  if (!$('query').value.trim()) { ev.preventDefault(); setStatus('검색어를 먼저 고르거나 입력하세요.', true); }
-}));
-
 // ---------- 시작 ----------
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then(() => loadShared()).catch(() => loadShared());
+  navigator.serviceWorker.register('sw.js').then(loadShared, loadShared);
 } else {
   loadShared();
 }
