@@ -6,8 +6,10 @@ if (!token) { console.error('APIFY_TOKEN 시크릿이 없습니다.'); process.e
 const cfg = JSON.parse(await readFile(new URL('../config.json', import.meta.url), 'utf8'));
 const OUT = new URL('../data/ranking.json', import.meta.url);
 
-async function runActor(actor, input) {
-  const url = `https://api.apify.com/v2/acts/${actor.replace('/', '~')}/run-sync-get-dataset-items?token=${token}&timeout=290`;
+// maxItems / maxTotalChargeUsd: 결과 개수·비용 상한 (무료 크레딧 초과 방지)
+async function runActor(actor, input, maxItems, maxUsd) {
+  let url = `https://api.apify.com/v2/acts/${actor.replace('/', '~')}/run-sync-get-dataset-items?token=${token}&timeout=290&maxItems=${maxItems}`;
+  if (maxUsd) url += `&maxTotalChargeUsd=${maxUsd}`;
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   if (!res.ok) throw new Error(`${actor}: ${res.status} ${(await res.text()).slice(0, 300)}`);
   return (await res.json()).filter(d => !d.error);
@@ -38,10 +40,10 @@ const jobs = [];
 if (cfg.tiktokHashtags?.length) jobs.push(runActor('clockworks/tiktok-scraper', {
   hashtags: cfg.tiktokHashtags, resultsPerPage: cfg.tiktokPerHashtag,
   shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false, shouldDownloadSlideshowImages: false,
-}).then(r => r.map(tt)));
+}, cfg.tiktokHashtags.length * cfg.tiktokPerHashtag, cfg.tiktokMaxUsd).then(r => r.map(tt)));
 if (cfg.instagramHashtags?.length) jobs.push(runActor('apify/instagram-hashtag-scraper', {
   hashtags: cfg.instagramHashtags, resultsLimit: cfg.instagramPerHashtag,
-}).then(r => r.filter(d => d.type === 'Video' || d.videoPlayCount != null || d.videoViewCount != null).map(ig)));
+}, cfg.instagramHashtags.length * cfg.instagramPerHashtag, cfg.instagramMaxUsd).then(r => r.filter(d => d.type === 'Video' || d.videoPlayCount != null || d.videoViewCount != null).map(ig)));
 
 const settled = await Promise.allSettled(jobs);
 const fresh = [];

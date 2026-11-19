@@ -5,26 +5,20 @@
     "tiktokshopfinds",
     "founditonamazon",
     "gadgets",
-    "coolgadgets",
     "kitchengadgets",
     "homegadgets",
-    "viralproducts",
-    "musthaves",
-    "신기한물건",
-    "꿀템"
+    "신기한물건"
   ],
   "instagramHashtags": [
     "amazonfinds",
     "gadgets",
     "kitchengadgets",
-    "tiktokmademebuyit",
-    "신기한물건",
-    "살림템",
-    "다이소꿀템",
-    "자취템"
+    "신기한물건"
   ],
-  "tiktokPerHashtag": 25,
-  "instagramPerHashtag": 20,
+  "tiktokPerHashtag": 18,
+  "instagramPerHashtag": 12,
+  "tiktokMaxUsd": 0.45,
+  "instagramMaxUsd": 0.25,
   "keepDays": 0,
   "maxItems": 3000,
   "shopWords": [
