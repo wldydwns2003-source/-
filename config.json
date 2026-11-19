@@ -19,6 +19,17 @@
   "instagramPerHashtag": 12,
   "tiktokMaxUsd": 0.45,
   "instagramMaxUsd": 0.25,
+  "youtubeQueries": [
+    "tiktok made me buy it",
+    "amazon finds",
+    "cool gadgets",
+    "kitchen gadgets",
+    "신기한 물건",
+    "다이소 꿀템",
+    "쿠팡 추천템",
+    "살림템"
+  ],
+  "youtubePerQuery": 50,
   "keepDays": 0,
   "maxItems": 3000,
   "shopWords": [

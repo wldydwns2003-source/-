@@ -13,6 +13,8 @@ GitHub Actions가 매주 월요일 오전 `config.json`의 해시태그를 수�
    - Name: `APIFY_TOKEN` / Secret: 복사한 토큰
 3. Actions 탭 → "인기 아이템 자동 수집" → Run workflow (바로 1회 수집)
 
+**유튜브 쇼츠 (무료):** 구글 YouTube Data API 키를 `YOUTUBE_API_KEY` 시크릿으로 등록하면 `config.json`의 `youtubeQueries` 검색어로 역대 조회수 순 쇼츠도 함께 수집합니다. (Apify 크레딧 사용 안 함)
+
 수집할 해시태그·개수는 `config.json`에서 바꿀 수 있어요. (개수를 늘리면 Apify 사용료가 늘어납니다)
 
 ## 기능

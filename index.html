@@ -92,7 +92,7 @@
 <body>
 <header>
   <h1>🔥 <span>바이럴</span> 쇼핑 아이템 검색기</h1>
-  <div class="sub">틱톡 · 인스타그램에서 조회수 터진 신기한 아이템을 찾아 쇼츠 주제로 쓰세요.</div>
+  <div class="sub">틱톡 · 인스타그램 · 유튜브 쇼츠에서 조회수 터진 신기한 아이템을 찾아 쇼츠 주제로 쓰세요.</div>
 </header>
 
 <div class="tabs">
@@ -114,7 +114,7 @@
     </div>
     <div class="toolbar" style="margin-top:10px">
       <div><label>게시 기간</label><select id="rankDays"><option value="0" selected>전체 기간</option><option value="365">1년 이내</option><option value="90">3개월 이내</option><option value="30">1개월 이내</option></select></div>
-      <div><label>플랫폼</label><select id="rankPlat"><option value="">전체</option><option value="tiktok">틱톡</option><option value="instagram">인스타</option></select></div>
+      <div><label>플랫폼</label><select id="rankPlat"><option value="">전체</option><option value="tiktok">틱톡</option><option value="instagram">인스타</option><option value="youtube">유튜브</option></select></div>
       <div><label>키워드</label><input type="text" id="rankQ" placeholder="예: kitchen, 다이소"></div>
       <label class="check"><input type="checkbox" id="rankShop"> 🛒 판매 신호만</label>
     </div>
@@ -398,6 +398,7 @@
   function setStatus(msg, err) { const el = $('#autoStatus'); el.textContent = msg; el.classList.toggle('err', !!err); }
 
   // ---------- Render ----------
+  const PLAT = { tiktok: { ko: '🎵 틱톡', en: 'TikTok' }, instagram: { ko: '📸 인스타', en: 'Instagram' }, youtube: { ko: '▶️ 유튜브', en: 'YouTube' } };
   const viral = (r) => r.followers > 0 ? r.views / r.followers : 0;
   const eng = (r) => r.views > 0 ? (r.likes + r.comments + r.shares) / r.views : 0;
   const fmt = (n) => n >= 1e8 ? (n / 1e8).toFixed(1) + '억' : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + '만' : n >= 1e3 ? (n / 1e3).toFixed(1) + '천' : String(n || 0);
@@ -413,9 +414,9 @@
     const thumb = /^https:\/\//.test(r.thumb) ? r.thumb : '';
     return `<div class="item">
       <a class="thumb" href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer">
-        <span class="noimg">${r.platform === 'tiktok' ? 'TikTok' : 'Instagram'}</span>
+        <span class="noimg">${PLAT[r.platform]?.en || ''}</span>
         ${thumb ? `<img src="${esc(thumb)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="this.remove()">` : ''}
-        <span class="plat">${r.platform === 'tiktok' ? '🎵 틱톡' : '📸 인스타'}</span>
+        <span class="plat">${PLAT[r.platform]?.ko || ''}</span>
         <span class="badges">${badges.join('')}</span>
         <span class="views">▶ ${r.views ? fmt(r.views) : '-'}</span>
       </a>
@@ -425,7 +426,7 @@
           <span>❤️ ${fmt(r.likes)}</span><span>💬 ${fmt(r.comments)}</span>${r.shares ? `<span>↗️ ${fmt(r.shares)}</span>` : ''}${r.saves ? `<span>🔖 ${fmt(r.saves)}</span>` : ''}
         </div>
         <div class="meta">
-          <span>@${esc(r.author)}${r.followers ? ' · 팔로워 ' + fmt(r.followers) : ''}</span>
+          <span>@${esc(r.author)}${r.followers ? ' · ' + (r.platform === 'youtube' ? '구독자 ' : '팔로워 ') + fmt(r.followers) : ''}</span>
           <span>${ago(r.date)}</span>${r.views ? `<span>참여율 ${(eng(r) * 100).toFixed(1)}%</span>` : ''}
         </div>
         <div class="actions">
@@ -512,11 +513,11 @@
       : rankSort === 'viral' && v ? `<small>팔로워의 ${v >= 100 ? Math.round(v) : v.toFixed(1)}배</small>` : '';
     return `<div class="rank ${i < 3 ? 'top3' : ''}">
       <div class="no">${i + 1}</div>
-      <a class="rthumb" href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer"><span>${r.platform === 'tiktok' ? 'TikTok' : 'Insta'}</span>${thumb ? `<img src="${esc(thumb)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="this.remove()">` : ''}</a>
+      <a class="rthumb" href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer"><span>${PLAT[r.platform]?.en || ''}</span>${thumb ? `<img src="${esc(thumb)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="this.remove()">` : ''}</a>
       <div class="rbody">
         <div class="big">▶ ${fmt(r.views)}${metric}</div>
         <div class="cap">${esc(r.caption) || '<i>(캡션 없음)</i>'}</div>
-        <div class="meta"><span>${r.platform === 'tiktok' ? '🎵 틱톡' : '📸 인스타'}</span><span>❤️ ${fmt(r.likes)}</span><span>💬 ${fmt(r.comments)}</span>${r.shares ? `<span>↗️ ${fmt(r.shares)}</span>` : ''}<span>@${esc(r.author)}${r.followers ? ' · 팔로워 ' + fmt(r.followers) : ''}</span><span>${ago(r.date)}</span>${r.shop ? '<span style="color:var(--good)">🛒 판매</span>' : ''}${v >= 10 ? `<span style="color:var(--warn)">🔥 ${Math.round(v)}배</span>` : ''}</div>
+        <div class="meta"><span>${PLAT[r.platform]?.ko || ''}</span><span>❤️ ${fmt(r.likes)}</span><span>💬 ${fmt(r.comments)}</span>${r.shares ? `<span>↗️ ${fmt(r.shares)}</span>` : ''}<span>@${esc(r.author)}${r.followers ? ' · ' + (r.platform === 'youtube' ? '구독자 ' : '팔로워 ') + fmt(r.followers) : ''}</span><span>${ago(r.date)}</span>${r.shop ? '<span style="color:var(--good)">🛒 판매</span>' : ''}${v >= 10 ? `<span style="color:var(--warn)">🔥 ${Math.round(v)}배</span>` : ''}</div>
         <div class="ract"><a href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer">원본 보기</a><button data-save="${esc(r.id)}" class="${isSaved ? 'saved' : ''}">${isSaved ? '⭐ 저장됨' : '☆ 저장'}</button></div>
       </div></div>`;
   }
