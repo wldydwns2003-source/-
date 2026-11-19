@@ -5,7 +5,12 @@
 - 사진: instaloader로 원본 해상도(display_url) 그대로 저장
 - 여러 장이면 zip 하나로 묶어서 내려줌
 
-실행: python app.py  →  브라우저에서 http://127.0.0.1:5000
+- 휴대폰용: 클라우드(Render 등)에 올려서 휴대폰 브라우저로 접속. 안드로이드는 '공유' 메뉴로 바로 다운로드.
+
+로컬 실행: python app.py  →  브라우저에서 http://127.0.0.1:5000
+환경변수 (클라우드용, 모두 선택)
+  IG_COOKIES   cookies.txt 내용 전체 (인스타가 로그인 요구할 때)
+  ACCESS_KEY   접속 비밀번호 (남이 내 서버/계정을 쓰지 못하게)
 """
 from __future__ import annotations
 
@@ -23,6 +28,12 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 
 BASE_DIR = Path(__file__).resolve().parent
 COOKIES_FILE = BASE_DIR / "cookies.txt"  # (선택) 비공개/로그인 필요 게시물용
+ACCESS_KEY = os.environ.get("ACCESS_KEY", "").strip()
+
+if os.environ.get("IG_COOKIES", "").strip():
+    # 클라우드에서는 파일 대신 환경변수로 쿠키를 받음
+    COOKIES_FILE = Path(tempfile.gettempdir()) / "ig_cookies.txt"
+    COOKIES_FILE.write_text(os.environ["IG_COOKIES"].strip() + "\n", encoding="utf-8")
 SAVE_DIR = BASE_DIR / "downloads"         # 서버 쪽에도 사본을 남김
 
 URL_RE = re.compile(
@@ -150,12 +161,36 @@ def fetch(url: str) -> tuple[list[Path], Path]:
 
 
 @app.get("/")
+@app.get("/share")  # 안드로이드 공유 메뉴(share_target) 진입점
 def index():
     return send_from_directory(BASE_DIR, "index.html")
 
 
+@app.get("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(BASE_DIR / "static", "manifest.webmanifest",
+                               mimetype="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    return send_from_directory(BASE_DIR / "static", "sw.js", mimetype="text/javascript")
+
+
+@app.get("/icon-<int:size>.png")
+def icon(size):
+    return send_from_directory(BASE_DIR / "static", f"icon-{size}.png")
+
+
+@app.get("/api/config")
+def api_config():
+    return jsonify(needKey=bool(ACCESS_KEY))
+
+
 @app.get("/api/download")
 def api_download():
+    if ACCESS_KEY and request.headers.get("X-Key", "") != ACCESS_KEY:
+        return jsonify(error="비밀번호가 틀렸습니다.", needKey=True), 401
     url = request.args.get("url", "").strip()
     try:
         files, workdir = fetch(url)
@@ -191,10 +226,11 @@ def api_download():
 def main():
     port = int(os.environ.get("PORT", 5000))
     url = f"http://127.0.0.1:{port}"
-    print(f"\n  인스타 다운로더 실행 중 → {url}\n  (종료: Ctrl+C)\n")
+    print(f"\n  인스타 다운로더 실행 중 → {url}")
+    print("  같은 와이파이의 휴대폰에서는 http://<이 컴퓨터 IP>:%d 로 접속\n  (종료: Ctrl+C)\n" % port)
     if not os.environ.get("NO_BROWSER"):
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    app.run(host="127.0.0.1", port=port, threaded=True)
+    app.run(host="0.0.0.0", port=port, threaded=True)
 
 
 if __name__ == "__main__":

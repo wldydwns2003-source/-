@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: insta-downloader
+    runtime: docker
+    plan: free
+    dockerfilePath: ./insta-downloader/Dockerfile
+    dockerContext: ./insta-downloader
+    healthCheckPath: /api/config
+    envVars:
+      - key: ACCESS_KEY
+        sync: false
+      - key: IG_COOKIES
+        sync: false

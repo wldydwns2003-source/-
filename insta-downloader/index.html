@@ -2,8 +2,13 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>인스타 다운로더</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#d6336c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="인스타다운">
 <style>
   :root {
     --bg: #faf9f7; --card: #ffffff; --text: #1d1b19; --muted: #6f6a64; --line: #e6e2dc;
@@ -12,29 +17,35 @@
   @media (prefers-color-scheme: dark) {
     :root { --bg: #151413; --card: #1f1d1b; --text: #f1eee9; --muted: #a39d95; --line: #34312d; --ok: #69db7c; --err: #ff8787; }
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin: 0; background: var(--bg); color: var(--text);
     font: 16px/1.5 -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 56px 16px; }
-  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  main { max-width: 560px; margin: 0 auto; padding: max(32px, env(safe-area-inset-top)) 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.02em; }
   h1 span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .sub { color: var(--muted); margin: 0 0 28px; }
-  .box { display: flex; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px; }
-  .box:focus-within { border-color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 15px; }
+  .grad { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; }
+  button { border: 0; border-radius: 14px; font-weight: 700; font-size: 17px; cursor: pointer; font-family: inherit; }
+  button:disabled { opacity: .5; }
+  #paste { width: 100%; height: 64px; font-size: 19px; }
+  .row { display: flex; gap: 8px; margin-top: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 6px; }
+  .row:focus-within { border-color: var(--accent); }
   input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 16px; padding: 10px; }
-  button { border: 0; border-radius: 10px; padding: 0 18px; font-weight: 600; font-size: 15px; cursor: pointer;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; }
-  button:disabled { opacity: .5; cursor: default; }
-  .opts { display: flex; gap: 16px; margin: 12px 4px 0; color: var(--muted); font-size: 14px; flex-wrap: wrap; }
-  .opts label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
-  #status { min-height: 24px; margin: 18px 4px; font-size: 15px; white-space: pre-wrap; }
+  .row button { padding: 0 16px; font-size: 15px; }
+  .opt { display: flex; gap: 8px; align-items: center; margin: 12px 4px 0; color: var(--muted); font-size: 14px; }
+  .opt input { flex: none; width: 20px; height: 20px; padding: 0; margin: 0; accent-color: var(--accent); }
+  #status { min-height: 24px; margin: 18px 4px 10px; font-size: 15px; white-space: pre-wrap; word-break: break-word; }
   #status.ok { color: var(--ok); } #status.err { color: var(--err); }
+  #save { display: none; width: 100%; height: 56px; background: var(--ok); color: #fff; }
   .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent);
     border-radius: 50%; animation: r .7s linear infinite; vertical-align: -2px; margin-right: 6px; }
   @keyframes r { to { transform: rotate(360deg); } }
-  h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 32px 4px 8px; }
+  details { margin-top: 28px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font-size: 14px; }
+  summary { font-weight: 600; cursor: pointer; }
+  details ol { padding-left: 20px; margin: 8px 0 0; color: var(--muted); }
+  h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 28px 4px 6px; }
   ul { list-style: none; padding: 0; margin: 0; }
-  li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); font-size: 13px; }
   li .u { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
   li .r { flex: none; } li .r.ok { color: var(--ok); } li .r.err { color: var(--err); }
 </style>
@@ -42,18 +53,27 @@
 <body>
 <main>
   <h1><span>인스타</span> 원본 다운로더</h1>
-  <p class="sub">릴스·게시물 주소를 붙여넣으면 바로 원본 화질로 저장됩니다.</p>
+  <p class="sub">링크 복사 → 아래 버튼 한 번. 원본 화질 그대로 저장돼요.</p>
 
-  <form class="box" id="f">
-    <input id="url" type="url" placeholder="https://www.instagram.com/reel/..." autocomplete="off" autofocus>
-    <button id="btn" type="submit">다운로드</button>
+  <button id="paste" class="grad">📋 붙여넣고 바로 다운로드</button>
+
+  <form class="row" id="f">
+    <input id="url" type="url" inputmode="url" placeholder="또는 여기에 주소 입력" autocomplete="off">
+    <button id="btn" class="grad" type="submit">받기</button>
   </form>
-  <div class="opts">
-    <label><input type="checkbox" id="auto" checked> 붙여넣으면 즉시 다운로드</label>
-    <label><input type="checkbox" id="clip"> 창으로 돌아오면 클립보드 자동 확인</label>
-  </div>
+  <label class="opt"><input type="checkbox" id="clip"> 앱으로 돌아오면 복사한 링크 자동 다운로드</label>
 
   <div id="status"></div>
+  <button id="save">📥 갤러리(사진)에 저장</button>
+
+  <details>
+    <summary>📱 더 빠르게 쓰는 법</summary>
+    <ol>
+      <li><b>홈 화면에 추가</b>: 브라우저 메뉴(⋮ 또는 공유 버튼) → "홈 화면에 추가". 앱처럼 열려요.</li>
+      <li><b>안드로이드</b>: 홈 화면에 추가한 뒤 인스타에서 <b>공유 → 인스타다운</b>을 누르면 바로 다운로드돼요.</li>
+      <li><b>아이폰</b>: 받은 뒤 <b>"갤러리에 저장"</b> → "동영상 저장"을 누르면 사진 앱에 들어가요. (그냥 받으면 '파일' 앱 → 다운로드 폴더)</li>
+    </ol>
+  </details>
 
   <h2>최근 기록</h2>
   <ul id="hist"></ul>
@@ -62,37 +82,54 @@
 <script>
 const RE = /https?:\/\/(?:www\.|m\.)?instagram\.com\/(?:[\w.]+\/)?(?:p|reels?|tv)\/[\w-]+/i;
 const $ = id => document.getElementById(id);
-const input = $('url'), btn = $('btn'), statusEl = $('status');
+const input = $('url'), btn = $('btn'), pasteBtn = $('paste'), saveBtn = $('save'), statusEl = $('status');
 const done = new Set();
-let busy = false;
+let busy = false, lastFiles = null, needKey = false;
 
 const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-$('auto').checked = store.get('auto', true);
 $('clip').checked = store.get('clip', false);
-$('auto').onchange = e => store.set('auto', e.target.checked);
 $('clip').onchange = e => store.set('clip', e.target.checked);
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 function setStatus(html, cls = '') { statusEl.className = cls; statusEl.innerHTML = html; }
 function addHist(url, text, ok) {
   const li = document.createElement('li');
-  li.innerHTML = `<span class="u"></span><span class="r ${ok ? 'ok' : 'err'}"></span>`;
+  li.innerHTML = '<span class="u"></span><span class="r"></span>';
   li.querySelector('.u').textContent = url;
-  li.querySelector('.r').textContent = text;
+  const r = li.querySelector('.r'); r.textContent = text; r.classList.add(ok ? 'ok' : 'err');
   $('hist').prepend(li);
+}
+function setBusy(b) { busy = b; btn.disabled = b; pasteBtn.disabled = b; }
+
+function getKey(force) {
+  let k = store.get('key', '');
+  if (force || !k) {
+    k = prompt('접속 비밀번호를 입력하세요') || '';
+    store.set('key', k);
+  }
+  return k;
 }
 
 async function download(raw) {
   const m = (raw || '').match(RE);
-  if (!m) { setStatus('인스타그램 게시물/릴스 주소를 넣어 주세요.', 'err'); return; }
+  if (!m) { setStatus('인스타그램 게시물/릴스 링크가 아니에요.\n인스타에서 ⋯ → "링크 복사" 후 다시 눌러 주세요.', 'err'); return; }
   const url = m[0];
   if (busy) return;
-  busy = true; btn.disabled = true;
-  setStatus('<span class="spin"></span>원본 화질로 받는 중…');
+  setBusy(true); saveBtn.style.display = 'none'; lastFiles = null;
+  input.value = url;
+  setStatus('<span class="spin"></span>원본 화질로 받는 중… (서버가 자고 있으면 첫 요청은 30초쯤 걸려요)');
   try {
-    const res = await fetch('/api/download?url=' + encodeURIComponent(url));
+    let res;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      res = await fetch('/api/download?url=' + encodeURIComponent(url),
+        { headers: needKey ? { 'X-Key': getKey(attempt > 0) } : {} });
+      if (res.status !== 401) break;
+      needKey = true;
+    }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error(j.error || `서버 오류 (${res.status})`);
@@ -101,43 +138,78 @@ async function download(raw) {
     const name = decodeURIComponent((cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)/i) || [, 'instagram'])[1]);
     const count = res.headers.get('X-File-Count') || '1';
     const blob = await res.blob();
+
+    // 1) 바로 다운로드 (안드로이드: 다운로드 폴더 / 아이폰: 파일 앱)
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+
+    // 2) 갤러리 저장용 공유 버튼 (단일 사진/영상일 때)
+    const file = new File([blob], name, { type: blob.type || (name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg') });
+    if (!name.endsWith('.zip') && navigator.canShare && navigator.canShare({ files: [file] })) {
+      lastFiles = [file]; saveBtn.style.display = 'block';
+    }
+
     const mb = (blob.size / 1048576).toFixed(1);
     setStatus(`✅ 저장 완료: ${name} (${count}개, ${mb}MB)`, 'ok');
     addHist(url, `${count}개 · ${mb}MB`, true);
     done.add(url);
-    input.value = '';
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
     addHist(url, '실패', false);
   } finally {
-    busy = false; btn.disabled = false; input.focus();
+    setBusy(false);
   }
 }
 
+saveBtn.onclick = async () => {
+  if (!lastFiles) return;
+  try { await navigator.share({ files: lastFiles }); } catch {}
+};
+
+// 큰 버튼: 클립보드 읽고 즉시 다운로드
+pasteBtn.onclick = async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!RE.test(text)) throw new Error('nolink');
+    download(text);
+  } catch (e) {
+    if (e.message === 'nolink') setStatus('복사된 인스타 링크가 없어요. 인스타에서 ⋯ → "링크 복사"를 먼저 해 주세요.', 'err');
+    else { setStatus('클립보드 접근이 막혀 있어요. 아래 칸을 길게 눌러 붙여넣어 주세요.', 'err'); input.focus(); }
+  }
+};
+
 $('f').onsubmit = e => { e.preventDefault(); download(input.value); };
 
-// 붙여넣기 / 입력과 동시에 즉시 다운로드
+// 입력칸에 붙여넣는 순간 즉시 다운로드
 input.addEventListener('paste', e => {
-  if (!$('auto').checked) return;
   const text = (e.clipboardData || window.clipboardData).getData('text');
-  if (RE.test(text)) { e.preventDefault(); input.value = text.trim(); download(text); }
+  if (RE.test(text)) { e.preventDefault(); download(text); }
 });
-input.addEventListener('input', () => {
-  if ($('auto').checked && RE.test(input.value) && !busy) download(input.value);
-});
+input.addEventListener('input', () => { if (RE.test(input.value) && !busy) download(input.value); });
 
-// 창으로 돌아왔을 때 클립보드에 새 인스타 주소가 있으면 자동 다운로드
-window.addEventListener('focus', async () => {
-  if (!$('clip').checked || busy || !navigator.clipboard?.readText) return;
+// 앱으로 돌아왔을 때 새 링크 자동 다운로드 (선택)
+async function checkClipboard() {
+  if (!$('clip').checked || busy || document.visibilityState !== 'visible' || !navigator.clipboard?.readText) return;
   try {
     const m = (await navigator.clipboard.readText()).match(RE);
-    if (m && !done.has(m[0])) { input.value = m[0]; download(m[0]); }
+    if (m && !done.has(m[0])) download(m[0]);
   } catch {}
-});
+}
+document.addEventListener('visibilitychange', checkClipboard);
+window.addEventListener('focus', checkClipboard);
+
+// 서버 설정 확인 + 안드로이드 '공유'로 들어온 링크 처리
+(async () => {
+  try { needKey = (await (await fetch('/api/config')).json()).needKey; } catch {}
+  const q = new URLSearchParams(location.search);
+  const shared = [q.get('url'), q.get('text'), q.get('title')].filter(Boolean).join(' ');
+  if (shared) {
+    history.replaceState(null, '', '/');
+    download(shared);
+  }
+})();
 </script>
 </body>
 </html>
