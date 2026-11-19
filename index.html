@@ -85,6 +85,8 @@
   .seg { display: flex; gap: 4px; flex-wrap: wrap; }
   .seg button { padding: 7px 12px; font-size: 13px; }
   .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .platbox { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 0 0 8px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  .platbox .pl { color: var(--muted); font-size: 12px; }
   .updated { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
   @media (max-width: 600px) { header, .tabs, main { padding-left: 12px; padding-right: 12px; } .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
 </style>
@@ -114,9 +116,15 @@
     </div>
     <div class="toolbar" style="margin-top:10px">
       <div><label>게시 기간</label><select id="rankDays"><option value="0" selected>전체 기간</option><option value="365">1년 이내</option><option value="90">3개월 이내</option><option value="30">1개월 이내</option></select></div>
-      <div><label>플랫폼</label><select id="rankPlat"><option value="">전체</option><option value="tiktok">틱톡</option><option value="instagram">인스타</option><option value="youtube">유튜브</option></select></div>
       <div><label>키워드</label><input type="text" id="rankQ" placeholder="예: kitchen, 다이소"></div>
       <label class="check"><input type="checkbox" id="rankShop" checked> 🛒 쇼핑 영상만</label>
+    </div>
+    <div class="platbox">
+      <span class="pl">플랫폼</span>
+      <label class="check"><input type="checkbox" class="rankPlat" value="youtube" checked> ▶️ 유튜브</label>
+      <label class="check"><input type="checkbox" class="rankPlat" value="tiktok" checked> 🎵 틱톡</label>
+      <label class="check"><input type="checkbox" class="rankPlat" value="instagram" checked> 📸 인스타</label>
+      <span class="pl" id="platCounts"></span>
     </div>
     <div class="updated" id="rankUpdated"></div>
     <div id="rankList"><div class="empty">불러오는 중...</div></div>
@@ -531,12 +539,14 @@
     }
     const d = new Date(rankData.updatedAt);
     $('#rankUpdated').textContent = `마지막 업데이트: ${d.toLocaleString('ko-KR')} · 매주 월요일 자동 갱신`;
-    const days = Number($('#rankDays').value), plat = $('#rankPlat').value, q = $('#rankQ').value.trim().toLowerCase(), shopOnly = $('#rankShop').checked;
+    const days = Number($('#rankDays').value), plats = new Set([...document.querySelectorAll('.rankPlat:checked')].map(x => x.value)), q = $('#rankQ').value.trim().toLowerCase(), shopOnly = $('#rankShop').checked;
     const cutoff = days > 0 ? Date.now() - days * 864e5 : 0;
-    let list = rankData.items.filter(r => (!cutoff || !r.date || new Date(r.date) >= cutoff) && (!plat || r.platform === plat) && (!shopOnly || r.shop) &&
+    let list = rankData.items.filter(r => (!cutoff || !r.date || new Date(r.date) >= cutoff) && plats.has(r.platform) && (!shopOnly || r.shop) &&
       (!q || (r.caption || '').toLowerCase().includes(q) || (r.author || '').toLowerCase().includes(q)));
     if (rankSort === 'viral') list = list.filter(r => r.followers > 0);
     list.sort((a, b) => rankFns[rankSort](b) - rankFns[rankSort](a));
+    $("#platCounts").textContent = list.length > 100 ? `· ${list.length}개 중 상위 100개` : `· ${list.length}개`;
+    if (!plats.size) { box.innerHTML = '<div class="empty">플랫폼을 하나 이상 체크하세요.</div>'; return; }
     list = list.slice(0, 100);
     box.innerHTML = list.length ? list.map(rankRow).join('') : '<div class="empty">조건에 맞는 영상이 없어요. 기간을 늘려보세요.</div>';
     bindSave(box, list);
@@ -544,7 +554,13 @@
   $('#rankSort').querySelectorAll('button').forEach(b => b.onclick = () => {
     rankSort = b.dataset.v; $('#rankSort').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); renderRanking();
   });
-  ['#rankDays', '#rankPlat', '#rankQ', '#rankShop'].forEach(s => $(s).addEventListener('input', renderRanking));
+  ['#rankDays', '#rankQ', '#rankShop'].forEach(s => $(s).addEventListener('input', renderRanking));
+  // 플랫폼 체크 상태 기억
+  const savedPlats = store.get('rankPlats', null);
+  document.querySelectorAll('.rankPlat').forEach(c => {
+    if (savedPlats) c.checked = savedPlats.includes(c.value);
+    c.addEventListener('change', () => { store.set('rankPlats', [...document.querySelectorAll('.rankPlat:checked')].map(x => x.value)); renderRanking(); });
+  });
 
   // init
   loadSettings(); renderQuickPresets();
