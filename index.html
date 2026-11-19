@@ -562,6 +562,32 @@
     c.addEventListener('change', () => { store.set('rankPlats', [...document.querySelectorAll('.rankPlat:checked')].map(x => x.value)); renderRanking(); });
   });
 
+  // ---------- 앱으로 열기 (안드로이드: 유튜브·틱톡·인스타 앱 바로 실행, 앱 없으면 웹으로) ----------
+  const APP_PKG = [
+    [/(^|\.)youtube\.com$|^youtu\.be$/, 'com.google.android.youtube'],
+    [/(^|\.)tiktok\.com$/, 'com.zhiliaoapp.musically'],
+    [/(^|\.)instagram\.com$/, 'com.instagram.android'],
+  ];
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  window.appIntentUrl = (url) => {
+    let u; try { u = new URL(url); } catch { return null; }
+    if (u.protocol !== 'https:') return null;
+    if (/^ads\./.test(u.hostname)) return null; // 크리에이티브 센터 등 앱에서 못 여는 페이지는 웹으로
+    const hit = APP_PKG.find(([re]) => re.test(u.hostname));
+    if (!hit) return null;
+    return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${hit[1]};S.browser_fallback_url=${encodeURIComponent(url)};end`;
+  };
+  window.openInApp = (href) => { location.href = href; };
+  document.addEventListener('click', (e) => {
+    if (!isAndroid) return; // 아이폰은 유튜브·틱톡·인스타 링크가 설치된 앱으로 자동 연결됨
+    const a = e.target.closest('a[href^="https://"]');
+    if (!a) return;
+    const intent = window.appIntentUrl(a.href);
+    if (!intent) return;
+    e.preventDefault();
+    window.openInApp(intent);
+  });
+
   // init
   loadSettings(); renderQuickPresets();
   loadRanking(); renderChips(); renderResults(); updateSavedCount();
