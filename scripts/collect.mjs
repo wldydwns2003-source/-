@@ -64,9 +64,9 @@ for (const n of fresh) {
   n.shop = shop(n.caption);
   map.set(n.id, n);
 }
-const cutoff = Date.now() - cfg.keepDays * 864e5;
+const cutoff = cfg.keepDays > 0 ? Date.now() - cfg.keepDays * 864e5 : 0; // 0 = 기간 제한 없음 (예전 대박 영상도 보관)
 const items = [...map.values()]
-  .filter(i => !i.date || new Date(i.date) >= cutoff)
+  .filter(i => !cutoff || !i.date || new Date(i.date) >= cutoff)
   .sort((a, b) => b.views - a.views)
   .slice(0, cfg.maxItems);
 await writeFile(OUT, JSON.stringify({ updatedAt: now, count: items.length, items }, null, 0));

@@ -2,7 +2,7 @@ name: 인기 아이템 자동 수집
 
 on:
   schedule:
-    - cron: '17 21 * * *'   # 매일 한국시간 오전 6:17
+    - cron: '17 21 * * 0'   # 매주 월요일 한국시간 오전 6:17 (예전 영상 위주라 주 1회면 충분)
   workflow_dispatch: {}      # Actions 탭에서 수동 실행 가능
 
 permissions:
@@ -21,23 +21,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Playwright 설치
-        run: npm install --no-save playwright@1.49.1 && npx playwright install --with-deps chromium
-      - name: 무료 수집 (틱톡 크리에이티브 센터)
-        id: free
-        continue-on-error: true
-        run: node scripts/collect-free.mjs
-      - name: Apify 수집 (토큰이 있을 때만)
-        continue-on-error: true
+      - name: Apify 수집
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         run: |
-          if [ -z "$APIFY_TOKEN" ]; then echo "APIFY_TOKEN 없음 → 건너뜀"; exit 0; fi
+          if [ -z "$APIFY_TOKEN" ]; then echo "::warning::APIFY_TOKEN 시크릿이 없어 수집을 건너뜁니다"; exit 0; fi
           node scripts/collect.mjs
       - name: 결과 저장
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add data/ranking.json
           git diff --cached --quiet || git commit -m "랭킹 데이터 갱신 $(date -u +%F)"
           git pull --rebase && git push

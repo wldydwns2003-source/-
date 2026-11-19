@@ -4,8 +4,8 @@
 설치 없이 `index.html` 파일을 브라우저로 열면 바로 쓸 수 있습니다.
 
 ## 🏆 인기 랭킹 (매일 자동 갱신)
-사이트를 열면 틱톡·인스타 쇼핑 아이템 영상이 **조회수 / 급상승 / 팔로워 대비 / 공유** 순위로 바로 보입니다.
-GitHub Actions가 매일 한국시간 오전 6시경 `config.json`의 해시태그를 수집해 `data/ranking.json`을 갱신합니다.
+사이트를 열면 틱톡·인스타 쇼핑 아이템 영상이 **전체 기간 조회수 / 급상승 / 팔로워 대비 / 공유** 순위로 바로 보입니다.
+GitHub Actions가 매주 월요일 오전 `config.json`의 해시태그를 수집해 `data/ranking.json`을 갱신합니다.
 
 **최초 1회 설정**
 1. https://apify.com 가입 → Settings → API & Integrations → Personal API token 복사
