@@ -1,6 +1,6 @@
 {
-  "name": "인스타 원본 다운로더",
-  "short_name": "인스타다운",
+  "name": "원본 화질 다운로더",
+  "short_name": "원본다운",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

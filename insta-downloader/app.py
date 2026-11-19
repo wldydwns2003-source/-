@@ -1,6 +1,6 @@
-"""인스타그램 원본 화질 다운로더 (로컬 실행용)
+"""원본 화질 다운로더
 
-- 릴스 / 게시물(사진·영상·여러 장) / IGTV 지원
+- 인스타(릴스·게시물·사진 여러 장), 틱톡, 유튜브, 페이스북, X 등 yt-dlp 지원 사이트 전부
 - 영상: yt-dlp로 가장 높은 화질의 영상+음성을 받아 mp4로 합침 (재인코딩 없음 → 원본 화질 유지)
 - 사진: instaloader로 원본 해상도(display_url) 그대로 저장
 - 여러 장이면 zip 하나로 묶어서 내려줌
@@ -14,7 +14,7 @@
 """
 from __future__ import annotations
 
-import io
+import mimetypes
 import os
 import re
 import shutil
@@ -23,8 +23,9 @@ import threading
 import webbrowser
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 BASE_DIR = Path(__file__).resolve().parent
 COOKIES_FILE = BASE_DIR / "cookies.txt"  # (선택) 비공개/로그인 필요 게시물용
@@ -36,10 +37,22 @@ if os.environ.get("IG_COOKIES", "").strip():
     COOKIES_FILE.write_text(os.environ["IG_COOKIES"].strip() + "\n", encoding="utf-8")
 SAVE_DIR = BASE_DIR / "downloads"         # 서버 쪽에도 사본을 남김
 
-URL_RE = re.compile(
+IG_RE = re.compile(
     r"https?://(?:www\.|m\.)?instagram\.com/(?:[\w.]+/)?(p|reel|reels|tv)/([\w-]+)",
     re.I,
 )
+ANY_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.I)
+
+# 주소 → 파일 이름 앞부분
+SITE_NAMES = {
+    "youtube.com": "youtube", "youtu.be": "youtube", "tiktok.com": "tiktok",
+    "facebook.com": "facebook", "fb.watch": "facebook", "fb.com": "facebook",
+    "twitter.com": "x", "x.com": "x", "threads.net": "threads", "threads.com": "threads",
+    "pinterest.com": "pinterest", "pin.it": "pinterest", "vimeo.com": "vimeo",
+    "reddit.com": "reddit", "naver.com": "naver", "kakao.com": "kakao",
+    "dailymotion.com": "dailymotion", "twitch.tv": "twitch", "bilibili.com": "bilibili",
+    "douyin.com": "douyin", "xiaohongshu.com": "xiaohongshu", "soundcloud.com": "soundcloud",
+}
 
 app = Flask(__name__, static_folder=None)
 
@@ -49,11 +62,27 @@ class DownloadError(Exception):
 
 
 def parse_url(url: str) -> tuple[str, str]:
-    m = URL_RE.search(url or "")
+    """인스타 주소면 (kind, shortcode), 아니면 DownloadError"""
+    m = IG_RE.search(url or "")
     if not m:
-        raise DownloadError("인스타그램 게시물/릴스 주소가 아닙니다. (예: https://www.instagram.com/reel/XXXX/)")
+        raise DownloadError("인스타그램 주소가 아닙니다.")
     kind = m.group(1).lower()
     return ("reel" if kind == "reels" else kind), m.group(2)
+
+
+def site_name(url: str) -> str:
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    for dom, name in SITE_NAMES.items():
+        if host == dom or host.endswith("." + dom):
+            return name
+    parts = host.split(".")
+    return parts[-2] if len(parts) >= 2 else "video"
+
+
+def safe(s: str) -> str:
+    return re.sub(r"[^\w-]+", "_", s or "").strip("_")[:60] or "video"
 
 
 def ffmpeg_path() -> str | None:
@@ -69,15 +98,18 @@ def ffmpeg_path() -> str | None:
 
 
 # ---------------------------------------------------------------- yt-dlp (영상)
-def fetch_with_ytdlp(url: str, outdir: Path) -> list[Path]:
+def fetch_with_ytdlp(url: str, outdir: Path, allow_playlist: bool = True) -> list[Path]:
     import yt_dlp
 
     ff = ffmpeg_path()
     opts = {
         "outtmpl": str(outdir / "%(id)s_%(playlist_index|1)s.%(ext)s"),
-        # 최고 화질 영상 + 최고 음질 → 합치기. ffmpeg 없으면 단일 파일 중 최고.
+        # 최고 화질 영상 + 최고 음질 → 합치기(재인코딩 없음). ffmpeg 없으면 단일 파일 중 최고.
         "format": "bv*+ba/b" if ff else "b",
+        # 해상도가 가장 높은 것 우선. 같은 해상도면 H.264/AAC(휴대폰·캡컷 호환) 우선.
+        "format_sort": ["res", "fps", "vcodec:h264", "acodec:aac"],
         "merge_output_format": "mp4",
+        "noplaylist": not allow_playlist,  # 유튜브 재생목록 통째로 받는 것 방지
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
@@ -130,33 +162,52 @@ def _load_cookies_into(L, path: Path) -> None:
 
 
 # ---------------------------------------------------------------------- 공통
-def fetch(url: str) -> tuple[list[Path], Path]:
-    kind, shortcode = parse_url(url)
-    clean_url = f"https://www.instagram.com/{kind}/{shortcode}/"
-    workdir = Path(tempfile.mkdtemp(prefix="igdl_"))
+def fetch(url: str) -> tuple[list[Path], Path, str]:
+    """반환: (파일들, 임시폴더, 파일이름 앞부분)"""
+    m = ANY_URL_RE.search(url or "")
+    if not m:
+        raise DownloadError("링크(https://...)를 넣어 주세요.")
+    url = m.group(0).rstrip(".,)")
+    workdir = Path(tempfile.mkdtemp(prefix="dl_"))
     errors = []
 
-    # 게시물(/p/)은 사진·혼합 캐러셀일 수 있으므로 instaloader 먼저
-    order = ["instaloader", "ytdlp"] if kind == "p" else ["ytdlp", "instaloader"]
+    if IG_RE.search(url):
+        kind, shortcode = parse_url(url)
+        clean_url = f"https://www.instagram.com/{kind}/{shortcode}/"
+        prefix = f"instagram_{shortcode}"
+        # 게시물(/p/)은 사진·혼합 캐러셀일 수 있으므로 instaloader 먼저
+        order = ["instaloader", "ytdlp"] if kind == "p" else ["ytdlp", "instaloader"]
+    else:
+        clean_url, shortcode, order = url, "", ["ytdlp"]
+        prefix = site_name(url)
+
     for method in order:
         sub = workdir / method
         sub.mkdir()
         try:
             files = (
-                fetch_with_ytdlp(clean_url, sub)
+                fetch_with_ytdlp(clean_url, sub, allow_playlist=bool(shortcode))
                 if method == "ytdlp"
                 else fetch_with_instaloader(shortcode, sub)
             )
             if files:
-                return files, workdir
+                if not shortcode:  # 다른 사이트: 영상 ID를 파일 이름에
+                    prefix = f"{prefix}_{safe(files[0].stem.rsplit('_', 1)[0])}"
+                return files, workdir, prefix
         except Exception as e:  # noqa: BLE001
             errors.append(f"{method}: {e}")
 
     shutil.rmtree(workdir, ignore_errors=True)
-    msg = " / ".join(errors) or "받을 수 있는 미디어가 없습니다."
-    if re.search(r"login|401|403|private|rate|Please wait", msg, re.I):
-        msg = ("인스타그램이 로그인을 요구하거나 요청을 막았습니다. 비공개 계정이거나 요청이 너무 많을 수 있어요. "
-               "README의 'cookies.txt' 설정을 해 주세요.\n\n상세: " + msg)
+    msg = " / ".join(errors) or "받을 수 있는 영상/사진이 없습니다."
+    msg = re.sub(r"\x1b\[[0-9;]*m", "", msg)
+    if "Unsupported URL" in msg:
+        msg = "지원하지 않는 사이트이거나 영상이 없는 페이지입니다.\n\n상세: " + msg
+    elif re.search(r"Sign in to confirm|not a bot", msg, re.I):
+        msg = ("유튜브가 이 서버를 로봇으로 의심해 막았습니다. (클라우드 서버에서 자주 생겨요) "
+               "잠시 후 다시 해 보거나 PC 버전을 써 주세요.\n\n상세: " + msg)
+    elif re.search(r"login|401|403|private|rate|Please wait", msg, re.I):
+        msg = ("사이트가 로그인을 요구하거나 요청을 막았습니다. 비공개 게시물이거나 요청이 너무 많을 수 있어요. "
+               "인스타라면 README의 쿠키(IG_COOKIES) 설정을 해 주세요.\n\n상세: " + msg)
     raise DownloadError(msg)
 
 
@@ -193,31 +244,41 @@ def api_download():
         return jsonify(error="비밀번호가 틀렸습니다.", needKey=True), 401
     url = request.args.get("url", "").strip()
     try:
-        files, workdir = fetch(url)
+        files, workdir, prefix = fetch(url)
     except DownloadError as e:
         return jsonify(error=str(e)), 400
 
     try:
         SAVE_DIR.mkdir(exist_ok=True)
-        _, shortcode = parse_url(url)
         if len(files) == 1:
             f = files[0]
-            name = f"instagram_{shortcode}{f.suffix.lower()}"
-            shutil.copy2(f, SAVE_DIR / name)
-            data = io.BytesIO(f.read_bytes())
+            name = f"{prefix}{f.suffix.lower()}"
+            out = workdir / name
+            f.rename(out)
         else:
-            name = f"instagram_{shortcode}.zip"
-            data = io.BytesIO()
-            with zipfile.ZipFile(data, "w", zipfile.ZIP_STORED) as z:  # 무압축 = 원본 그대로
+            name = f"{prefix}.zip"
+            out = workdir / name
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:  # 무압축 = 원본 그대로
                 for i, f in enumerate(files, 1):
-                    member = f"instagram_{shortcode}_{i:02d}{f.suffix.lower()}"
-                    z.write(f, member)
-                    shutil.copy2(f, SAVE_DIR / member)
-            data.seek(0)
-    finally:
+                    z.write(f, f"{prefix}_{i:02d}{f.suffix.lower()}")
+        if not os.environ.get("RENDER"):  # PC에서 쓸 때만 사본 보관
+            shutil.copy2(out, SAVE_DIR / name)
+    except Exception:
         shutil.rmtree(workdir, ignore_errors=True)
+        raise
 
-    resp = send_file(data, as_attachment=True, download_name=name)
+    # 메모리에 올리지 않고 디스크에서 조금씩 전송 (긴 영상도 OK) → 끝나면 임시폴더 삭제
+    def stream():
+        try:
+            with open(out, "rb") as fh:
+                while chunk := fh.read(1024 * 1024):
+                    yield chunk
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    resp = Response(stream(), mimetype=mimetypes.guess_type(name)[0] or "application/octet-stream")
+    resp.headers["Content-Length"] = str(out.stat().st_size)
+    resp.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(name)}"
     resp.headers["X-File-Count"] = str(len(files))
     resp.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-File-Count"
     return resp

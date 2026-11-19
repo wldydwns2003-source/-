@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>인스타 다운로더</title>
+<title>원본 다운로더</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <meta name="theme-color" content="#d6336c">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="인스타다운">
+<meta name="apple-mobile-web-app-title" content="원본다운">
 <style>
   :root {
     --bg: #faf9f7; --card: #ffffff; --text: #1d1b19; --muted: #6f6a64; --line: #e6e2dc;
@@ -52,8 +52,8 @@
 </head>
 <body>
 <main>
-  <h1><span>인스타</span> 원본 다운로더</h1>
-  <p class="sub">링크 복사 → 아래 버튼 한 번. 원본 화질 그대로 저장돼요.</p>
+  <h1><span>원본 화질</span> 다운로더</h1>
+  <p class="sub">인스타 · 틱톡 · 유튜브 · 페이스북 · X 등<br>링크 복사 → 아래 버튼 한 번이면 원본 화질로 저장돼요.</p>
 
   <button id="paste" class="grad">📋 붙여넣고 바로 다운로드</button>
 
@@ -70,7 +70,7 @@
     <summary>📱 더 빠르게 쓰는 법</summary>
     <ol>
       <li><b>홈 화면에 추가</b>: 브라우저 메뉴(⋮ 또는 공유 버튼) → "홈 화면에 추가". 앱처럼 열려요.</li>
-      <li><b>안드로이드</b>: 홈 화면에 추가한 뒤 인스타에서 <b>공유 → 인스타다운</b>을 누르면 바로 다운로드돼요.</li>
+      <li><b>안드로이드</b>: 홈 화면에 추가한 뒤 인스타·틱톡·유튜브 등에서 <b>공유 → 원본다운</b>을 누르면 바로 다운로드돼요.</li>
       <li><b>아이폰</b>: 받은 뒤 <b>"갤러리에 저장"</b> → "동영상 저장"을 누르면 사진 앱에 들어가요. (그냥 받으면 '파일' 앱 → 다운로드 폴더)</li>
     </ol>
   </details>
@@ -80,7 +80,7 @@
 </main>
 
 <script>
-const RE = /https?:\/\/(?:www\.|m\.)?instagram\.com\/(?:[\w.]+\/)?(?:p|reels?|tv)\/[\w-]+/i;
+const RE = /https?:\/\/[^\s<>"']+/i;
 const $ = id => document.getElementById(id);
 const input = $('url'), btn = $('btn'), pasteBtn = $('paste'), saveBtn = $('save'), statusEl = $('status');
 const done = new Set();
@@ -116,8 +116,8 @@ function getKey(force) {
 
 async function download(raw) {
   const m = (raw || '').match(RE);
-  if (!m) { setStatus('인스타그램 게시물/릴스 링크가 아니에요.\n인스타에서 ⋯ → "링크 복사" 후 다시 눌러 주세요.', 'err'); return; }
-  const url = m[0];
+  if (!m) { setStatus('링크(https://...)가 아니에요.\n앱에서 공유 → "링크 복사" 후 다시 눌러 주세요.', 'err'); return; }
+  const url = m[0].replace(/[.,)]+$/, '');
   if (busy) return;
   setBusy(true); saveBtn.style.display = 'none'; lastFiles = null;
   input.value = url;
@@ -175,7 +175,7 @@ pasteBtn.onclick = async () => {
     if (!RE.test(text)) throw new Error('nolink');
     download(text);
   } catch (e) {
-    if (e.message === 'nolink') setStatus('복사된 인스타 링크가 없어요. 인스타에서 ⋯ → "링크 복사"를 먼저 해 주세요.', 'err');
+    if (e.message === 'nolink') setStatus('복사된 링크가 없어요. 앱에서 공유 → "링크 복사"를 먼저 해 주세요.', 'err');
     else { setStatus('클립보드 접근이 막혀 있어요. 아래 칸을 길게 눌러 붙여넣어 주세요.', 'err'); input.focus(); }
   }
 };
@@ -187,7 +187,6 @@ input.addEventListener('paste', e => {
   const text = (e.clipboardData || window.clipboardData).getData('text');
   if (RE.test(text)) { e.preventDefault(); download(text); }
 });
-input.addEventListener('input', () => { if (RE.test(input.value) && !busy) download(input.value); });
 
 // 앱으로 돌아왔을 때 새 링크 자동 다운로드 (선택)
 async function checkClipboard() {
