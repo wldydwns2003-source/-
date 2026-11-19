@@ -1,0 +1,9 @@
+{
+  "tiktokHashtags": ["tiktokmademebuyit", "amazonfinds", "tiktokshopfinds", "founditonamazon", "gadgets", "coolgadgets", "kitchengadgets", "homegadgets", "viralproducts", "musthaves", "신기한물건", "꿀템"],
+  "instagramHashtags": ["amazonfinds", "gadgets", "kitchengadgets", "tiktokmademebuyit", "신기한물건", "살림템", "다이소꿀템", "자취템"],
+  "tiktokPerHashtag": 25,
+  "instagramPerHashtag": 20,
+  "keepDays": 60,
+  "maxItems": 600,
+  "shopWords": ["link in bio", "tiktok shop", "tiktokshop", "amazon", "founditonamazon", "tiktokmademebuyit", "temu", "aliexpress", "shop now", "on sale", "구매", "링크", "쿠팡", "프로필", "최저가", "공구", "판매"]
+}
