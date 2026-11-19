@@ -1,6 +1,6 @@
 // 공유 대상(Share Target)으로 받은 이미지를 캐시에 잠깐 보관했다가 페이지로 넘겨줍니다.
 const SHARE_CACHE = 'shared-image';
-const APP_CACHE = 'sns-lens-v4';
+const APP_CACHE = 'sns-lens-v5';
 const APP_FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {

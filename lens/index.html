@@ -49,6 +49,7 @@
     <button class="btn ghost" id="pasteBtn">📋 캡처한 사진 붙여넣기</button>
     <div id="pasteBox" class="pastebox hidden" contenteditable="true" data-ph="여기를 누르고 → 키보드 위 [붙여넣기] 누르기"></div>
     <input type="file" id="fileInput" accept="image/*" class="hidden">
+    <label class="btn hidden" id="galleryBtn" for="fileInput" style="display:block;text-align:center">🖼️ 갤러리에서 방금 캡처 고르기</label>
 
     <img id="preview" class="preview hidden" alt="선택한 사진">
     <button class="btn hidden" id="findBtn">🔍 이 영상 원본 찾기</button>
@@ -80,7 +81,7 @@ function setImage(file) {
   currentFile = file;
   $('preview').src = URL.createObjectURL(file);
   ['preview', 'findBtn', 'changeBtn'].forEach((id) => $(id).classList.remove('hidden'));
-  ['drop', 'pasteBtn', 'pasteBox'].forEach((id) => $(id).classList.add('hidden'));
+  ['drop', 'pasteBtn', 'pasteBox', 'galleryBtn'].forEach((id) => $(id).classList.add('hidden'));
   setStatus('');
 }
 
@@ -150,8 +151,10 @@ $('pasteBtn').onclick = async () => {
       }
     }
   } catch (e) { seen.push('오류: ' + e.message); }
-  showPasteBox('버튼으로는 사진을 못 가져왔어요' + (seen.length ? ` (${seen.join(', ')})` : '') +
-    '.\n아래 점선 칸을 누르면 키보드가 뜨는데, 키보드 위의 [붙여넣기] 사진을 눌러주세요.');
+  $('pasteBox').classList.add('hidden');
+  $('galleryBtn').classList.remove('hidden');
+  setStatus('이 폰 브라우저는 클립보드 사진을 웹사이트에 넘겨주지 않아요' + (seen.length ? ` (${seen.join(', ')})` : '') +
+    '.\n위 빨간 버튼으로 갤러리에서 고르면 방금 찍은 캡처가 맨 앞에 있어요.\n가장 빠른 방법: 캡처 직후 [공유] → SNS검색', true);
 };
 
 async function handleTransfer(dt) {
