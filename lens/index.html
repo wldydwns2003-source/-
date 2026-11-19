@@ -47,7 +47,7 @@
       <span class="small">또는 스크린샷에서 <b>공유 → SNS검색</b></span>
     </label>
     <button class="btn ghost" id="pasteBtn">📋 캡처한 사진 붙여넣기</button>
-    <div id="pasteBox" class="pastebox hidden" contenteditable="true" inputmode="none" data-ph="여기를 길게 눌러 → 붙여넣기"></div>
+    <div id="pasteBox" class="pastebox hidden" contenteditable="true" data-ph="여기를 누르고 → 키보드 위 [붙여넣기] 누르기"></div>
     <input type="file" id="fileInput" accept="image/*" class="hidden">
 
     <img id="preview" class="preview hidden" alt="선택한 사진">
@@ -120,32 +120,67 @@ async function loadShared() {
 }
 
 // ---------- 클립보드 붙여넣기 ----------
-$('pasteBtn').onclick = async () => {
-  try {
-    if (!navigator.clipboard?.read) throw new Error('unsupported');
-    for (const item of await navigator.clipboard.read()) {
-      const type = item.types.find((t) => t.startsWith('image/'));
-      if (type) return setImage(new File([await item.getType(type)], 'clipboard.' + type.split('/')[1], { type }));
-    }
-    setStatus('클립보드에 사진이 없어요. 캡처 후 "복사"를 먼저 눌러주세요.\n또는 아래 칸을 길게 눌러 붙여넣기 해보세요.', true);
-  } catch {
-    setStatus('바로 읽기가 막혀 있어요. 아래 점선 칸을 길게 눌러 → 붙여넣기 하세요.');
-  }
+// 클립보드의 사진은 브라우저/키보드마다 형식이 달라서 여러 경로로 시도합니다.
+async function imgFromHtml(html) {
+  const src = new DOMParser().parseFromString(html, 'text/html').querySelector('img')?.src;
+  if (!src) return null;
+  try { const b = await (await fetch(src)).blob(); return b.type.startsWith('image/') ? b : null; } catch { return null; }
+}
+function useBlob(blob, name) {
+  const type = blob.type || 'image/png';
+  setImage(new File([blob], name + '.' + (type.split('/')[1] || 'png'), { type }));
+}
+function showPasteBox(msg) {
+  setStatus(msg);
   $('pasteBox').classList.remove('hidden');
   $('pasteBox').focus();
+}
+
+$('pasteBtn').onclick = async () => {
+  let seen = [];
+  try {
+    if (!navigator.clipboard?.read) throw new Error('이 브라우저는 클립보드 사진 읽기를 지원하지 않아요');
+    for (const item of await navigator.clipboard.read()) {
+      seen.push(...item.types);
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (type) return useBlob(await item.getType(type), 'clipboard');
+      if (item.types.includes('text/html')) {
+        const b = await imgFromHtml(await (await item.getType('text/html')).text());
+        if (b) return useBlob(b, 'clipboard');
+      }
+    }
+  } catch (e) { seen.push('오류: ' + e.message); }
+  showPasteBox('버튼으로는 사진을 못 가져왔어요' + (seen.length ? ` (${seen.join(', ')})` : '') +
+    '.\n아래 점선 칸을 누르면 키보드가 뜨는데, 키보드 위의 [붙여넣기] 사진을 눌러주세요.');
 };
+
+async function handleTransfer(dt) {
+  if (!dt) return false;
+  const f = [...(dt.files || [])].find((x) => x.type.startsWith('image/'));
+  if (f) { useBlob(f, 'pasted'); return true; }
+  const item = [...(dt.items || [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+  if (item) { useBlob(item.getAsFile(), 'pasted'); return true; }
+  const html = dt.getData && dt.getData('text/html');
+  if (html) { const b = await imgFromHtml(html); if (b) { useBlob(b, 'pasted'); return true; } }
+  return false;
+}
 document.addEventListener('paste', (e) => {
-  const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
-  if (item) { e.preventDefault(); setImage(item.getAsFile()); }
+  const dt = e.clipboardData;
+  if ([...(dt?.items || [])].some((i) => i.type.startsWith('image/')) || /<img/i.test(dt?.getData('text/html') || '')) e.preventDefault();
+  handleTransfer(dt);
 });
+// 키보드가 사진을 직접 넣는 경우 (삼성 키보드·Gboard 클립보드)
+$('pasteBox').addEventListener('beforeinput', (e) => {
+  if (e.dataTransfer && [...(e.dataTransfer.files || [])].length) { e.preventDefault(); handleTransfer(e.dataTransfer); }
+});
+$('pasteBox').addEventListener('drop', (e) => { e.preventDefault(); handleTransfer(e.dataTransfer); });
 $('pasteBox').addEventListener('input', async () => {
   const img = $('pasteBox').querySelector('img');
+  if (!img) { if ($('pasteBox').textContent.trim()) { $('pasteBox').innerHTML = ''; setStatus('글자가 붙여넣어졌어요. 사진을 붙여넣어 주세요.', true); } return; }
+  const src = img.src;
   $('pasteBox').innerHTML = '';
-  if (!img) return setStatus('사진이 아니에요. 캡처 사진을 복사한 뒤 다시 붙여넣어 주세요.', true);
-  try {
-    const blob = await (await fetch(img.src)).blob();
-    setImage(new File([blob], 'pasted.' + (blob.type.split('/')[1] || 'png'), { type: blob.type || 'image/png' }));
-  } catch { setStatus('붙여넣은 사진을 읽지 못했어요. "캡처 사진 선택"으로 골라주세요.', true); }
+  try { useBlob(await (await fetch(src)).blob(), 'pasted'); }
+  catch { setStatus('붙여넣은 사진을 읽지 못했어요. 위의 "캡처 사진 선택"으로 골라주세요 (최근 사진이 맨 앞에 있어요).', true); }
 });
 
 // ---------- 시작 ----------
