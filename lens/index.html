@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SNS 원본 찾기</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#0f1115">
+<style>
+  :root { --bg: #0f1115; --panel: #181b22; --panel2: #20242d; --line: #2c313c;
+    --text: #e8eaf0; --muted: #9aa1ae; --accent: #ff3b5c; --accent2: #25d3c4; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 16px 16px 60px; }
+  h1 { margin: 0 0 14px; font-size: 20px; }
+  h1 span { color: var(--accent); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .hidden { display: none !important; }
+  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center;
+    min-height: 150px; border: 2px dashed var(--line); border-radius: 14px; color: var(--muted); padding: 16px; }
+  .drop b { color: var(--text); font-size: 16px; }
+  .preview { width: 100%; max-height: 380px; object-fit: contain; border-radius: 10px; background: #000; display: block; }
+  button { font-family: inherit; }
+  .btn { width: 100%; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; color: #fff; background: var(--accent); margin-top: 10px; }
+  .btn.ghost { background: var(--panel2); border: 1px solid var(--line); color: var(--text); font-weight: 500; font-size: 15px; }
+  .status { color: var(--muted); font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
+  .status.err { color: var(--accent); }
+  .small { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  ol.small { padding-left: 18px; margin: 6px 0; }
+  .small b { color: var(--text); }
+  .pastebox { margin-top: 10px; min-height: 64px; border: 2px dashed var(--accent2); border-radius: 12px; padding: 12px;
+    color: var(--text); text-align: center; outline: none; overflow: hidden; max-height: 120px; }
+  .pastebox:empty::before { content: attr(data-ph); color: var(--muted); }
+  .kw { display: inline-block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎯 SNS <span>원본 영상 찾기</span></h1>
+
+  <section class="card">
+    <label class="drop" id="drop" for="fileInput">
+      <span style="font-size:34px">🖼️</span>
+      <b>캡처 사진 선택</b>
+      <span class="small">또는 스크린샷에서 <b>공유 → SNS검색</b></span>
+    </label>
+    <button class="btn ghost" id="pasteBtn">📋 캡처한 사진 붙여넣기</button>
+    <div id="pasteBox" class="pastebox hidden" contenteditable="true" data-ph="여기를 누르고 → 키보드 위 [붙여넣기] 누르기"></div>
+    <input type="file" id="fileInput" accept="image/*" class="hidden">
+    <label class="btn hidden" id="galleryBtn" for="fileInput" style="display:block;text-align:center">🖼️ 갤러리에서 방금 캡처 고르기</label>
+
+    <img id="preview" class="preview hidden" alt="선택한 사진">
+    <button class="btn hidden" id="findBtn">🔍 이 영상 원본 찾기</button>
+    <button class="btn ghost hidden" id="changeBtn">다른 사진</button>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="card small">
+    <b>찾는 방법</b>
+    <ol class="small">
+      <li><b>🔍 이 영상 원본 찾기</b> → 목록에서 <b>Google 렌즈</b>(또는 <b>Google</b>) 선택</li>
+      <li>렌즈 결과 위 검색창에 <span class="kw">instagram</span> <span class="kw">tiktok</span> <span class="kw">youtube</span> 중 하나를 추가하면 그 SNS 게시물만 나와요</li>
+      <li>렌즈 화면에서 네모 칸을 <b>영상 부분에만</b> 맞추면 더 잘 찾아요 (버튼·댓글 제외)</li>
+    </ol>
+    처음 한 번: 크롬 ⋮ → <b>앱 설치</b> 해두면 스크린샷 공유 목록에 <b>SNS검색</b>이 생겨요.
+  </section>
+  <p class="small" style="text-align:center">버전 v7</p>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentFile = null;
+
+function setStatus(msg, err = false) {
+  $('status').textContent = msg;
+  $('status').className = 'status' + (err ? ' err' : '');
+}
+
+function setImage(file) {
+  currentFile = file;
+  $('preview').src = URL.createObjectURL(file);
+  ['preview', 'findBtn', 'changeBtn'].forEach((id) => $(id).classList.remove('hidden'));
+  ['drop', 'pasteBtn', 'pasteBox', 'galleryBtn'].forEach((id) => $(id).classList.add('hidden'));
+  setStatus('');
+}
+
+$('fileInput').onchange = (e) => { if (e.target.files[0]) setImage(e.target.files[0]); };
+$('changeBtn').onclick = () => $('fileInput').click();
+
+// ---------- 구글 렌즈로 넘기기 ----------
+$('findBtn').onclick = async () => {
+  if (!currentFile) return;
+  const type = currentFile.type || 'image/png';
+  const file = new File([currentFile], 'capture.' + (type.split('/')[1] || 'png'), { type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      setStatus('렌즈 결과 위 검색창에 instagram / tiktok / youtube 를 추가해 보세요.');
+    } catch (e) {
+      if (e.name !== 'AbortError') setStatus('공유 실패: ' + e.message, true);
+    }
+  } else {
+    setStatus('이 브라우저는 사진 공유를 지원하지 않아요.\n안드로이드 크롬에서 열거나, 갤러리에서 사진을 열고 렌즈 버튼을 눌러주세요.', true);
+  }
+};
+
+// ---------- 다른 앱에서 "공유"로 들어온 사진 ----------
+async function loadShared() {
+  if (!new URLSearchParams(location.search).has('shared')) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const cache = await caches.open('shared-image');
+    const res = await cache.match('./shared-image');
+    if (!res) return setStatus('공유된 사진을 찾지 못했어요. 다시 공유해 주세요.', true);
+    const blob = await res.blob();
+    await cache.delete('./shared-image');
+    setImage(new File([blob], 'shared.' + (blob.type.split('/')[1] || 'png'), { type: blob.type }));
+    setStatus('아래 빨간 버튼을 누르면 구글 렌즈로 원본을 찾아요.');
+  } catch (e) { setStatus('공유 사진 읽기 실패: ' + e.message, true); }
+}
+
+// ---------- 클립보드 붙여넣기 ----------
+// 클립보드의 사진은 브라우저/키보드마다 형식이 달라서 여러 경로로 시도합니다.
+async function imgFromHtml(html) {
+  const src = new DOMParser().parseFromString(html, 'text/html').querySelector('img')?.src;
+  if (!src) return null;
+  try { const b = await (await fetch(src)).blob(); return b.type.startsWith('image/') ? b : null; } catch { return null; }
+}
+function useBlob(blob, name) {
+  const type = blob.type || 'image/png';
+  setImage(new File([blob], name + '.' + (type.split('/')[1] || 'png'), { type }));
+}
+function showPasteBox(msg) {
+  setStatus(msg);
+  $('pasteBox').classList.remove('hidden');
+  $('pasteBox').focus();
+}
+
+$('pasteBtn').onclick = async () => {
+  let seen = [];
+  try {
+    if (!navigator.clipboard?.read) throw new Error('이 브라우저는 클립보드 사진 읽기를 지원하지 않아요');
+    for (const item of await navigator.clipboard.read()) {
+      seen.push(...item.types);
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (type) return useBlob(await item.getType(type), 'clipboard');
+      if (item.types.includes('text/html')) {
+        const b = await imgFromHtml(await (await item.getType('text/html')).text());
+        if (b) return useBlob(b, 'clipboard');
+      }
+    }
+  } catch (e) { seen.push('오류: ' + e.message); }
+  $('pasteBox').classList.add('hidden');
+  $('galleryBtn').classList.remove('hidden');
+  setStatus('이 폰 브라우저는 클립보드 사진을 웹사이트에 넘겨주지 않아요' + (seen.length ? ` (${seen.join(', ')})` : '') +
+    '.\n위 빨간 버튼으로 갤러리에서 고르면 방금 찍은 캡처가 맨 앞에 있어요.\n가장 빠른 방법: 캡처 직후 [공유] → SNS검색', true);
+};
+
+async function handleTransfer(dt) {
+  if (!dt) return false;
+  const f = [...(dt.files || [])].find((x) => x.type.startsWith('image/'));
+  if (f) { useBlob(f, 'pasted'); return true; }
+  const item = [...(dt.items || [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+  if (item) { useBlob(item.getAsFile(), 'pasted'); return true; }
+  const html = dt.getData && dt.getData('text/html');
+  if (html) { const b = await imgFromHtml(html); if (b) { useBlob(b, 'pasted'); return true; } }
+  return false;
+}
+document.addEventListener('paste', (e) => {
+  const dt = e.clipboardData;
+  if ([...(dt?.items || [])].some((i) => i.type.startsWith('image/')) || /<img/i.test(dt?.getData('text/html') || '')) e.preventDefault();
+  handleTransfer(dt);
+});
+// 키보드가 사진을 직접 넣는 경우 (삼성 키보드·Gboard 클립보드)
+$('pasteBox').addEventListener('beforeinput', (e) => {
+  if (e.dataTransfer && [...(e.dataTransfer.files || [])].length) { e.preventDefault(); handleTransfer(e.dataTransfer); }
+});
+$('pasteBox').addEventListener('drop', (e) => { e.preventDefault(); handleTransfer(e.dataTransfer); });
+$('pasteBox').addEventListener('input', async () => {
+  const img = $('pasteBox').querySelector('img');
+  if (!img) { if ($('pasteBox').textContent.trim()) { $('pasteBox').innerHTML = ''; setStatus('글자가 붙여넣어졌어요. 사진을 붙여넣어 주세요.', true); } return; }
+  const src = img.src;
+  $('pasteBox').innerHTML = '';
+  try { useBlob(await (await fetch(src)).blob(), 'pasted'); }
+  catch { setStatus('붙여넣은 사진을 읽지 못했어요. 위의 "캡처 사진 선택"으로 골라주세요 (최근 사진이 맨 앞에 있어요).', true); }
+});
+
+// ---------- 시작 ----------
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(loadShared, loadShared);
+} else {
+  loadShared();
+}
+</script>
+</body>
+</html>

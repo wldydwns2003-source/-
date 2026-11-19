@@ -33,3 +33,11 @@ GitHub Actions가 매주 월요일 오전 `config.json`의 해시태그를 수�
 
 사용 Actor: `clockworks/tiktok-scraper`, `apify/instagram-hashtag-scraper` (설정에서 변경 가능)
 토큰과 저장 목록은 내 브라우저(localStorage)에만 저장됩니다.
+
+## 🎯 SNS 원본 영상 찾기 (`lens/`, 안드로이드용)
+캡처한 사진을 구글 렌즈로 바로 넘겨, 그 장면이 나온 인스타·틱톡·유튜브 원본 영상을 찾습니다. 무료, 키 불필요.
+
+- 스크린샷 → **공유 → SNS검색**, 또는 사진 선택 / 📋 붙여넣기
+- **🔍 이 영상 원본 찾기** → Google 렌즈 선택 → 렌즈 검색창에 `instagram` / `tiktok` / `youtube` 추가
+
+**설정:** 저장소 Settings → Pages → Branch 선택 → Save 후 `https://<아이디>.github.io/<저장소>/lens/` 를 안드로이드 크롬으로 열기 → ⋮ → 앱 설치
