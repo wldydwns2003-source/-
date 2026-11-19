@@ -3,7 +3,13 @@ name: 인기 아이템 자동 수집
 on:
   schedule:
     - cron: '17 21 * * 0'   # 매주 월요일 한국시간 오전 6:17 (예전 영상 위주라 주 1회면 충분)
-  workflow_dispatch: {}      # Actions 탭에서 수동 실행 가능
+  workflow_dispatch:         # Actions 탭에서 수동 실행 가능
+    inputs:
+      sources:
+        description: '수집 대상 (youtube = 유튜브만, Apify 크레딧 사용 안 함)'
+        type: choice
+        options: [all, youtube]
+        default: all
 
 permissions:
   contents: write
@@ -23,7 +29,7 @@ jobs:
           node-version: 20
       - name: 수집 (틱톡·인스타·유튜브)
         env:
-          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          APIFY_TOKEN: ${{ github.event.inputs.sources != 'youtube' && secrets.APIFY_TOKEN || '' }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: node scripts/collect.mjs
       - name: 결과 저장
