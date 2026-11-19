@@ -121,7 +121,12 @@ async function download(raw) {
   if (busy) return;
   setBusy(true); saveBtn.style.display = 'none'; lastFiles = null;
   input.value = url;
-  setStatus('<span class="spin"></span>원본 화질로 받는 중… (서버가 자고 있으면 첫 요청은 30초쯤 걸려요)');
+  const t0 = Date.now();
+  let phase = 'server';
+  const tick = setInterval(() => {
+    if (phase === 'server') setStatus(`<span class="spin"></span>원본 가져오는 중… ${Math.floor((Date.now() - t0) / 1000)}초`);
+  }, 500);
+  setStatus('<span class="spin"></span>원본 가져오는 중…');
   try {
     let res;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -137,7 +142,20 @@ async function download(raw) {
     const cd = res.headers.get('Content-Disposition') || '';
     const name = decodeURIComponent((cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)/i) || [, 'instagram'])[1]);
     const count = res.headers.get('X-File-Count') || '1';
-    const blob = await res.blob();
+    // 휴대폰으로 받는 진행률 표시
+    phase = 'transfer';
+    const total = +res.headers.get('Content-Length') || 0;
+    const chunks = []; let got = 0;
+    if (res.body && res.body.getReader) {
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); got += value.length;
+        setStatus(`<span class="spin"></span>저장 중… ${total ? Math.round(got / total * 100) + '%' : (got / 1048576).toFixed(1) + 'MB'}`);
+      }
+    }
+    const blob = chunks.length ? new Blob(chunks, { type: res.headers.get('Content-Type') || '' }) : await res.blob();
 
     // 1) 바로 다운로드 (안드로이드: 다운로드 폴더 / 아이폰: 파일 앱)
     const a = document.createElement('a');
@@ -161,6 +179,7 @@ async function download(raw) {
     setStatus('❌ ' + e.message, 'err');
     addHist(url, '실패', false);
   } finally {
+    clearInterval(tick);
     setBusy(false);
   }
 }
@@ -199,6 +218,8 @@ async function checkClipboard() {
   } catch {}
 }
 document.addEventListener('visibilitychange', checkClipboard);
+// 앱을 열거나 돌아올 때마다 서버를 미리 깨워 둠
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') fetch('/api/config').catch(() => {}); });
 window.addEventListener('focus', checkClipboard);
 
 // 서버 설정 확인 + 안드로이드 '공유'로 들어온 링크 처리

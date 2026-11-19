@@ -66,6 +66,32 @@ SITE_NAMES = {
 
 app = Flask(__name__, static_folder=None)
 
+# 첫 요청이 빠르도록 무거운 라이브러리를 서버 시작 때 미리 불러 둠
+try:
+    import instaloader  # noqa: F401
+    import yt_dlp  # noqa: F401
+except Exception:  # noqa: BLE001
+    pass
+
+
+def _keep_awake():
+    """Render 무료 서버는 15분간 접속이 없으면 잠듦(깨우는 데 30~60초) → 10분마다 스스로 접속해 깨어 있게 함"""
+    base = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if not base:
+        return
+    import time
+    import urllib.request
+
+    while True:
+        time.sleep(600)
+        try:
+            urllib.request.urlopen(base + "/api/config", timeout=30).read()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+threading.Thread(target=_keep_awake, daemon=True).start()
+
 
 class DownloadError(Exception):
     pass
@@ -124,6 +150,8 @@ def fetch_with_ytdlp(url: str, outdir: Path, allow_playlist: bool = True) -> lis
         "no_warnings": True,
         "noprogress": True,
         "retries": 3,
+        "socket_timeout": 20,
+        "concurrent_fragment_downloads": 8,  # 조각으로 나뉜 영상은 8개씩 동시에 받기
     }
     if ff:
         opts["ffmpeg_location"] = ff
