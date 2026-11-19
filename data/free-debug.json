@@ -1,13 +1,25 @@
 {
- "at": "2026-11-19T02:06:01.408Z",
+ "at": "2026-11-19T02:07:27.653Z",
  "pages": {
   "videos": {
+   "finalUrl": "https://ads.tiktok.com/creative/creativeCenter/trends",
+   "title": "",
+   "text": "",
+   "xhr": [],
    "responses": []
   },
   "hashtags": {
+   "finalUrl": "https://ads.tiktok.com/creative/creativeCenter/trends",
+   "title": "",
+   "text": "",
+   "xhr": [],
    "responses": []
   },
   "products": {
+   "finalUrl": "https://ads.tiktok.com/creative/creativeCenter",
+   "title": "",
+   "text": "",
+   "xhr": [],
    "responses": []
   }
  }
