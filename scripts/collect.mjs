@@ -16,7 +16,7 @@ async function runActor(actor, input, maxItems, maxUsd) {
   return (await res.json()).filter(d => !d.error);
 }
 const num = (...v) => { for (const x of v) { const n = Number(x); if (x != null && !isNaN(n)) return n; } return 0; };
-const shop = (t) => { t = (t || '').toLowerCase(); return cfg.shopWords.some(w => t.includes(w.toLowerCase())); };
+const shop = (t) => { t = (t || '').normalize('NFC').toLowerCase(); return cfg.shopWords.some(w => t.includes(w.normalize('NFC').toLowerCase())); };
 
 const tt = (d) => {
   const a = d.authorMeta || {}, v = d.videoMeta || {};

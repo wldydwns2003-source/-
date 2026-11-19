@@ -116,7 +116,7 @@
       <div><label>게시 기간</label><select id="rankDays"><option value="0" selected>전체 기간</option><option value="365">1년 이내</option><option value="90">3개월 이내</option><option value="30">1개월 이내</option></select></div>
       <div><label>플랫폼</label><select id="rankPlat"><option value="">전체</option><option value="tiktok">틱톡</option><option value="instagram">인스타</option><option value="youtube">유튜브</option></select></div>
       <div><label>키워드</label><input type="text" id="rankQ" placeholder="예: kitchen, 다이소"></div>
-      <label class="check"><input type="checkbox" id="rankShop"> 🛒 판매 신호만</label>
+      <label class="check"><input type="checkbox" id="rankShop" checked> 🛒 쇼핑 영상만</label>
     </div>
     <div class="updated" id="rankUpdated"></div>
     <div id="rankList"><div class="empty">불러오는 중...</div></div>
@@ -234,7 +234,7 @@
     '🇰🇷 국내': ['신기한물건', '신기한아이템', '꿀템', '살림템', '자취템', '다이소꿀템', '쿠팡추천템', '알리익스프레스', '주방템', '아이디어상품'],
     '🚗 카테고리': ['cargadgets', 'techgadgets', 'petgadgets', 'beautygadgets', 'campinggear', 'deskSetup'],
   };
-  const DEFAULT_SHOP = 'link in bio, tiktok shop, tiktokshop, amazon, amazonfinds, tiktokmademebuyit, founditonamazon, temu, aliexpress, shop now, on sale, 구매, 링크, 쿠팡, 프로필, 최저가, 공구, 판매';
+  const DEFAULT_SHOP = 'link in bio, tiktok shop, tiktokshop, amazon, founditonamazon, tiktokmademebuyit, temu, aliexpress, shop now, on sale, must have, musthave, finds, gadget, review, unboxing, haul, worth it, game changer, buy, product, 구매, 링크, 쿠팡, 프로필, 최저가, 공구, 판매, 꿀템, 추천템, 살림템, 자취템, 주방템, 생활템, 필수템, 신상, 가성비, 다이소, 리뷰, 언박싱, 가젯, 제품, 아이템, 신기한 물건, 신기한물건, 광고, 댓글 남겨, 댓글에, gift, items, tool, 가구, 선물, 물건, 발명품, 아이디어템, useful, kitchen, produk, 갖고싶, 갖고 싶';
 
   // ---------- Tabs ----------
   function showTab(name) {
@@ -299,8 +299,9 @@
     results = results.map(r => ({ ...r, shop: shopSignal(r.caption) }));
     renderResults();
   };
-  const shopWords = () => store.get('shopWords', DEFAULT_SHOP).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  const shopSignal = (text) => { const t = (text || '').toLowerCase(); return shopWords().some(w => t.includes(w)); };
+  // 기본 판매 단어 + 설정에서 추가한 단어
+  const shopWords = () => [...new Set((DEFAULT_SHOP + ',' + store.get('shopWords', '')).split(',').map(s => s.trim().normalize('NFC').toLowerCase()).filter(Boolean))];
+  const shopSignal = (text) => { const t = (text || '').normalize('NFC').toLowerCase(); return shopWords().some(w => t.includes(w)); };
 
   // ---------- Apify ----------
   async function runActor(actor, input) {
@@ -501,7 +502,7 @@
       const res = await fetch('data/ranking.json?t=' + Date.now());
       if (!res.ok) throw new Error(res.status);
       rankData = await res.json();
-      rankData.items.forEach(r => r.isVideo = true);
+      rankData.items.forEach(r => { r.isVideo = true; r.shop = shopSignal(r.caption); });
     } catch (e) { rankData = null; }
     renderRanking();
   }
