@@ -52,8 +52,10 @@ const debug = { at: new Date().toISOString(), pages: {} };
 
 for (const [kind, url] of PAGES) {
   // 이 페이지가 스스로 받아온 응답 중 목록 데이터를 기록
-  const got = [];
+  const got = [], xhr = [];
   const onRes = async (res) => {
+    const rt = res.request().resourceType();
+    if (rt === 'xhr' || rt === 'fetch') xhr.push(`${res.status()} ${new URL(res.url()).host}${new URL(res.url()).pathname}`);
     if (!res.url().includes('/creative_radar_api/')) return;
     try { const arr = firstArray((await res.json())?.data); if (arr) got.push({ url: res.url(), arr }); } catch {}
   };
@@ -66,7 +68,11 @@ for (const [kind, url] of PAGES) {
 
   // 가장 큰 목록을 이 페이지의 순위 데이터로 사용
   const best = got.sort((a, b) => b.arr.length - a.arr.length)[0];
-  debug.pages[kind] = { ...debug.pages[kind], responses: got.map(g => `${new URL(g.url).pathname} n=${g.arr.length}`), sample: best?.arr[0] };
+  let title = '', text = '';
+  try { title = await page.title(); text = (await page.innerText('body')).slice(0, 600); } catch {}
+  try { await page.screenshot({ path: new URL(`../data/debug-${kind}.png`, import.meta.url).pathname }); } catch {}
+  debug.pages[kind] = { ...debug.pages[kind], finalUrl: page.url(), title, text, xhr: xhr.slice(0, 60),
+    responses: got.map(g => `${new URL(g.url).pathname} n=${g.arr.length}`), sample: best?.arr[0] };
   if (best) out[kind] = best.arr.map((d, i) => norm[kind](d, i + 1)).filter(x => x.id && !x.id.endsWith(':'));
   console.log(`${kind}: ${out[kind].length}개`);
 }
