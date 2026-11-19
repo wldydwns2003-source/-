@@ -15,20 +15,29 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: 틱톡/인스타 수집
+      - name: Playwright 설치
+        run: npm install --no-save playwright@1.49.1 && npx playwright install --with-deps chromium
+      - name: 무료 수집 (틱톡 크리에이티브 센터)
+        id: free
+        continue-on-error: true
+        run: node scripts/collect-free.mjs
+      - name: Apify 수집 (토큰이 있을 때만)
+        continue-on-error: true
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-        run: node scripts/collect.mjs
+        run: |
+          if [ -z "$APIFY_TOKEN" ]; then echo "APIFY_TOKEN 없음 → 건너뜀"; exit 0; fi
+          node scripts/collect.mjs
       - name: 결과 저장
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/ranking.json
+          git add data/
           git diff --cached --quiet || git commit -m "랭킹 데이터 갱신 $(date -u +%F)"
-          git push
+          git pull --rebase && git push
