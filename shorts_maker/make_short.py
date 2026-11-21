@@ -199,9 +199,21 @@ def transcribe_original(src, preset):
         if p.returncode != 0 or not p.stdout:
             return ""
         audio = np.frombuffer(p.stdout, dtype=np.float32).copy()
-        model = WhisperModel(preset.get("whisper_model", "small"), device="auto", compute_type="int8")
-        segs, _ = model.transcribe(audio, language=preset.get("whisper_language") or None, vad_filter=True)
-        lines = [f"[{s.start:.1f}~{s.end:.1f}초] {s.text.strip()}" for s in segs]
+        devices = [preset.get("whisper_device") or "cpu"]
+        if devices[0] != "cpu":
+            devices.append("cpu")  # 그래픽카드(CUDA) 실패 시 CPU 로 다시
+        lines, last_err = None, None
+        for dev in devices:
+            try:
+                model = WhisperModel(preset.get("whisper_model", "small"), device=dev, compute_type="int8")
+                segs, _ = model.transcribe(audio, language=preset.get("whisper_language") or None,
+                                           vad_filter=True)
+                lines = [f"[{s.start:.1f}~{s.end:.1f}초] {s.text.strip()}" for s in segs]
+                break
+            except Exception as e:
+                last_err = e
+        if lines is None:
+            raise last_err
         if lines:
             log(f"  · 원본 말소리 {len(lines)}줄 받아씀")
         return "\n".join(lines)
