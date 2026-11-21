@@ -62,9 +62,73 @@ def run(cmd, cwd=None):
     return p.stdout
 
 
+FFMPEG_DIR = HERE / "ffmpeg"
+FFMPEG_ZIPS = [
+    "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+    "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+]
+
+
+def _add_to_path(d):
+    os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+
+
+def _find_local_ffmpeg():
+    """프로그램 폴더 안이나 winget 설치 위치에서 ffmpeg.exe 를 찾는다."""
+    places = [FFMPEG_DIR]
+    la = os.environ.get("LOCALAPPDATA")
+    if la:
+        places += [Path(la) / "Microsoft" / "WinGet" / "Links",
+                   Path(la) / "Microsoft" / "WinGet" / "Packages"]
+    for pf in (os.environ.get("ProgramFiles"), "C:\\ffmpeg"):
+        if pf:
+            places.append(Path(pf))
+    for base in places:
+        if not base.exists():
+            continue
+        if (base / "ffmpeg.exe").exists() and (base / "ffprobe.exe").exists():
+            return base
+        for exe in base.glob("**/bin/ffmpeg.exe") if base != Path(os.environ.get("ProgramFiles", "-")) \
+                else base.glob("ffmpeg*/bin/ffmpeg.exe"):
+            if (exe.parent / "ffprobe.exe").exists():
+                return exe.parent
+    return None
+
+
+def _download_ffmpeg():
+    import urllib.request
+    import zipfile
+    FFMPEG_DIR.mkdir(exist_ok=True)
+    zpath = FFMPEG_DIR / "ffmpeg.zip"
+    for url in FFMPEG_ZIPS:
+        try:
+            log(f"  · ffmpeg 를 내려받는 중이에요 (처음 한 번만, 약 100MB)...\n    {url}")
+            urllib.request.urlretrieve(url, zpath)
+            with zipfile.ZipFile(zpath) as z:
+                for name in z.namelist():
+                    base = name.rsplit("/", 1)[-1].lower()
+                    if base in ("ffmpeg.exe", "ffprobe.exe"):
+                        (FFMPEG_DIR / base).write_bytes(z.read(name))
+            zpath.unlink(missing_ok=True)
+            if (FFMPEG_DIR / "ffmpeg.exe").exists() and (FFMPEG_DIR / "ffprobe.exe").exists():
+                log("  · ffmpeg 준비 완료")
+                return True
+        except Exception as e:
+            log(f"    내려받기 실패: {e}")
+    return False
+
+
 def check_ffmpeg():
-    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
-        sys.exit("ffmpeg 가 설치되어 있지 않아요. 설치하기.bat 을 먼저 실행해 주세요.")
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+    found = _find_local_ffmpeg()
+    if found:
+        _add_to_path(found)
+        return
+    if os.name == "nt" and _download_ffmpeg():
+        _add_to_path(FFMPEG_DIR)
+        return
+    sys.exit("ffmpeg 를 찾지도, 내려받지도 못했어요. 인터넷 연결을 확인하거나 컴퓨터를 다시 켠 뒤 다시 해 주세요.")
 
 
 def probe(path):
