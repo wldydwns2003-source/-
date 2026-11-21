@@ -192,12 +192,21 @@ def transcribe_original(src, preset):
         return ""
     log("  · 원본 음성 받아쓰는 중 (faster-whisper)...")
     try:
+        import numpy as np
+        # 오디오는 ffmpeg 로 직접 풀어서 넘긴다 (PyAV 버전 충돌 회피)
+        p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000",
+                            "-f", "f32le", "-"], capture_output=True)
+        if p.returncode != 0 or not p.stdout:
+            return ""
+        audio = np.frombuffer(p.stdout, dtype=np.float32).copy()
         model = WhisperModel(preset.get("whisper_model", "small"), device="auto", compute_type="int8")
-        segs, _ = model.transcribe(str(src), vad_filter=True)
+        segs, _ = model.transcribe(audio, language=preset.get("whisper_language") or None, vad_filter=True)
         lines = [f"[{s.start:.1f}~{s.end:.1f}초] {s.text.strip()}" for s in segs]
+        if lines:
+            log(f"  · 원본 말소리 {len(lines)}줄 받아씀")
         return "\n".join(lines)
     except Exception as e:
-        log(f"  · 받아쓰기는 건너뛸게요 (오류: {type(e).__name__}). 장면만 보고 대본을 써요.")
+        log(f"  · 받아쓰기는 건너뛸게요 (오류: {type(e).__name__}: {str(e)[:80]}). 장면만 보고 대본을 써요.")
         return ""
 
 
@@ -266,6 +275,27 @@ SYSTEM_PROMPT = """너는 해외 영상을 원본으로 한국어 '이야기 쇼
 """
 
 
+TONE_RULE = """[원본 말투 따라 쓰기]
+원본 받아쓰기에 나레이션이 있으면, 그 나레이션의 말투를 분석해서 같은 느낌으로 새 대본을 쓴다.
+- 따라 할 것: 어미(합니다/해요/~죠), 문장 길이와 리듬, 말버릇, 감정의 온도, 정보를 풀어가는 순서와 호흡.
+- 따라 하면 안 되는 것: 원본 문장을 그대로 옮기거나 단어만 바꿔치기하는 것. 4어절 이상 연속으로 같은 표현을 쓰지 않는다.
+- 같은 정보라도 비유, 질문, 예시, 순서를 바꿔 완전히 새 문장으로 다시 쓴다. 후킹 문장과 마지막 문장은 특히 원본과 다르게 만든다.
+- 원본 나레이션이 외국어면 직역하지 말고, 그 말투의 분위기만 살려 자연스러운 한국어로 새로 쓴다.
+"""
+
+
+def overlap_report(transcript, plan, n=4):
+    """원본 나레이션과 새 대본에서 n어절 이상 겹치는 표현을 찾는다."""
+    def grams(text):
+        w = re.sub(r"\[[^\]]*\]", " ", text)
+        w = re.sub(r"[^\w\s%.]", " ", w).split()
+        return {" ".join(w[i:i + n]) for i in range(len(w) - n + 1)}
+    if not transcript:
+        return []
+    src = grams(transcript)
+    return sorted({g for s in plan["segments"] for g in grams(s["narration"]) if g in src})
+
+
 def plan_with_claude(src_info, frames, transcript, preset):
     import anthropic
 
@@ -276,7 +306,8 @@ def plan_with_claude(src_info, frames, transcript, preset):
         f"원본 길이: {src_info['dur']:.1f}초, 해상도 {src_info['w']}x{src_info['h']}\n"
         f"목표 쇼츠 길이: 약 {target}초 → 나레이션 전체 약 {int(target * cps)}글자, "
         f"구간 {preset['min_segments']}~{preset['max_segments']}개\n"
-        f"채널 주제/말투 요청: {style or '없음'}\n\n"
+        f"채널 주제/말투 요청: {style or '없음'}\n"
+        f"{TONE_RULE if (transcript and preset.get('follow_original_tone', True)) else ''}\n"
         f"원본 음성 받아쓰기:\n{transcript or '(말소리 없음 또는 받아쓰기 안 함)'}\n\n"
         "아래는 원본에서 고르게 뽑은 장면 캡처들이다. 각 캡처 앞의 숫자가 원본에서의 시간(초)이다."
     )
@@ -699,6 +730,9 @@ def make_short(src_path, preset, review=False, mock=False):
     log("[2/6] 대본·편집 계획 만드는 중 (Claude)...")
     plan = mock_plan(src, preset) if mock else plan_with_claude(src, frames, transcript, preset)
     plan = sanitize_plan(plan, src["dur"])
+    dup = overlap_report(transcript, plan)
+    if dup:
+        log("  ※ 원본 나레이션과 똑같은 표현이 있어요. 대본 확인 때 바꿔 주세요: " + " / ".join(dup[:5]))
     if review or preset.get("always_review"):
         plan = review_script(plan, workdir)
     (workdir / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
