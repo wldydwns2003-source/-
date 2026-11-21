@@ -232,6 +232,11 @@ PLAN_SCHEMA = {
         "hashtags": {"type": "array", "items": {"type": "string"}},
         "hook_line1": {"type": "string"},
         "hook_line2": {"type": "string"},
+        "clean_x": {"type": "number"},
+        "clean_y": {"type": "number"},
+        "clean_w": {"type": "number"},
+        "clean_h": {"type": "number"},
+        "original_has_voiceover": {"type": "boolean"},
         "segments": {
             "type": "array",
             "items": {
@@ -250,7 +255,8 @@ PLAN_SCHEMA = {
             },
         },
     },
-    "required": ["title", "description", "hashtags", "hook_line1", "hook_line2", "segments"],
+    "required": ["title", "description", "hashtags", "hook_line1", "hook_line2",
+                 "clean_x", "clean_y", "clean_w", "clean_h", "original_has_voiceover", "segments"],
     "additionalProperties": False,
 }
 
@@ -282,6 +288,16 @@ SYSTEM_PROMPT = """너는 해외 영상을 원본으로 한국어 '이야기 쇼
 - zoom 은 1.0~1.5 (1.0=확대 없음). 주인공이 작게 보이면 확대한다. 구간마다 조금씩 다르게 준다.
 - focus_x, focus_y 는 0~1 사이로, 확대할 때 화면의 어느 부분을 중심으로 볼지다 (0.5,0.5=정중앙).
 - speed 는 0.8~1.3. 긴장되는 순간은 느리게, 지루한 이동 장면은 빠르게.
+
+원본 화면 정리 (아주 중요)
+- 원본이 이미 누군가 편집한 영상이면, 화면에 기존 자막·제목·채널명·로고·앱 화면(상단 바, 검색창, 조회수 등)이 얹혀 있다.
+  이런 글자나 UI가 하나라도 남으면 새 자막과 겹쳐 엉망이 된다.
+- clean_x, clean_y, clean_w, clean_h: 모든 장면에 공통으로, 글자·UI·로고 없이 실제 촬영 화면만 보이는 직사각형 영역.
+  원본 전체 크기 기준 0~1 비율 (x,y = 왼쪽 위 모서리). 장면마다 위치가 바뀌는 글자도 피할 수 있게 넉넉히 안쪽으로 잡는다.
+  글자가 전혀 없으면 0,0,1,1.
+- zoom, focus_x, focus_y 는 이 깨끗한 영역 안에서의 값이다.
+- original_has_voiceover: 원본에 누군가의 나레이션(목소리 설명)이 있으면 true. 받아쓰기에 설명하는 말이 있거나,
+  화면에 문장형 자막이 계속 바뀌며 나오면 true 로 본다. true 면 원본 소리를 끄고 새 나레이션만 쓴다.
 
 메타 정보
 - hook_line1, hook_line2: 화면 위에 계속 떠 있을 두 줄 문구. 각 12자 이내, 궁금증을 자극할 것.
@@ -399,6 +415,13 @@ def sanitize_plan(plan, dur):
         })
     if not segs:
         sys.exit("대본이 비어 있어요. 다시 실행해 주세요.")
+    cx, cy = clamp(plan.get("clean_x"), 0, 0.9, 0), clamp(plan.get("clean_y"), 0, 0.9, 0)
+    cw, ch = clamp(plan.get("clean_w"), 0.1, 1, 1), clamp(plan.get("clean_h"), 0.1, 1, 1)
+    cw, ch = min(cw, 1 - cx), min(ch, 1 - cy)
+    if cw < 0.2 or ch < 0.15:
+        cx, cy, cw, ch = 0, 0, 1, 1
+    plan.update(clean_x=cx, clean_y=cy, clean_w=cw, clean_h=ch,
+                original_has_voiceover=bool(plan.get("original_has_voiceover", False)))
     plan["segments"] = segs
     return plan
 
@@ -511,6 +534,16 @@ def make_narration(text, raw_path, out_path, preset, mock=False):
 
 # ───────────────────────── 4. 컷 편집 ─────────────────────────
 
+def clean_view(src, plan):
+    """원본에서 글자·UI 를 뺀 깨끗한 영역을 새 '원본'처럼 다룬다."""
+    ox = int(src["w"] * plan.get("clean_x", 0)) // 2 * 2
+    oy = int(src["h"] * plan.get("clean_y", 0)) // 2 * 2
+    w = int(src["w"] * plan.get("clean_w", 1)) // 2 * 2
+    h = int(src["h"] * plan.get("clean_h", 1)) // 2 * 2
+    w, h = min(w, src["w"] - ox), min(h, src["h"] - oy)
+    return {**src, "w": w, "h": h, "ox": ox, "oy": oy, "full_w": src["w"], "full_h": src["h"]}
+
+
 def layout_for(src, preset):
     """'center' = 가운데 영상 + 위 문구/아래 자막, 'fill' = 화면 꽉 채우기."""
     layout = preset.get("layout", "center")
@@ -550,11 +583,16 @@ def render_segment(src_path, src, seg, narr_wav, narr_dur, lay, look, preset, ou
     eq = (f"eq=brightness={look['brightness']:.3f}:contrast={look['contrast']:.3f}"
           f":saturation={look['saturation']:.3f}")
     flip = ",hflip" if look["mirror"] else ""
-    pre = f"[0:v]setpts=(PTS-STARTPTS)/{speed:.3f},fps={FPS}{flip}"
+    pre = f"[0:v]setpts=(PTS-STARTPTS)/{speed:.3f},fps={FPS}"
+    if src.get("ox", 0) or src.get("oy", 0) or src["w"] != src.get("full_w", src["w"]) \
+            or src["h"] != src.get("full_h", src["h"]):
+        pre += f",crop={src['w']}:{src['h']}:{src['ox']}:{src['oy']}"
+    pre += flip
+    sharp = ",unsharp=5:5:0.8" if W / src["w"] > 1.8 else ""
 
     if lay["mode"] == "center":
         cw, ch, x, y = crop_box(src, seg, src["w"] / src["h"])
-        fg = f"crop={cw}:{ch}:{x}:{y},scale={W}:{lay['vh']},{eq},setsar=1"
+        fg = f"crop={cw}:{ch}:{x}:{y},scale={W}:{lay['vh']}:flags=lanczos{sharp},{eq},setsar=1"
         if preset.get("background", "blur") == "blur":
             bw, bh, bx, by = crop_box(src, {**seg, "zoom": 1.0}, W / H)
             vf = (f"{pre},split[a][b];"
@@ -566,10 +604,10 @@ def render_segment(src_path, src, seg, narr_wav, narr_dur, lay, look, preset, ou
                   f"[bg][fg]overlay=0:{lay['vy']}:shortest=1")
     else:
         cw, ch, x, y = crop_box(src, seg, W / H)
-        vf = f"{pre},crop={cw}:{ch}:{x}:{y},scale={W}:{H},{eq},setsar=1"
+        vf = f"{pre},crop={cw}:{ch}:{x}:{y},scale={W}:{H}:flags=lanczos{sharp},{eq},setsar=1"
     vf += f",tpad=stop_mode=clone:stop_duration={out_len:.2f},format=yuv420p[v]"
 
-    ov = float(preset.get("original_volume", 0.15))
+    ov = 0.0 if preset.get("_mute_original") else float(preset.get("original_volume", 0.15))
     if src["has_audio"] and ov > 0:
         tempo_chain = []
         t = speed
@@ -764,7 +802,13 @@ def make_short(src_path, preset, review=False, mock=False):
     log(f"  · 나레이션 총 {sum(durs):.1f}초")
 
     log("[4/6] 장면 자르고 확대·색감 맞추는 중...")
-    lay = layout_for(src, preset)
+    view = clean_view(src, plan)
+    if view["w"] != src["w"] or view["h"] != src["h"]:
+        log(f"  · 원본의 기존 자막·UI 를 빼고 {view['w']}x{view['h']} 영역만 사용")
+    if plan.get("original_has_voiceover") and preset.get("mute_original_voiceover", True):
+        preset = {**preset, "_mute_original": True}
+        log("  · 원본에 다른 사람 나레이션이 있어서 원본 소리는 끕니다")
+    lay = layout_for(view, preset)
     jit = float(preset.get("color_variation", 0.04))
     look = {"brightness": preset.get("brightness", 0.02) + rng.uniform(-jit, jit) / 2,
             "contrast": preset.get("contrast", 1.06) + rng.uniform(-jit, jit),
@@ -773,7 +817,7 @@ def make_short(src_path, preset, review=False, mock=False):
     seg_files, timings, t = [], [], 0.0
     for i, s in enumerate(plan["segments"]):
         out = workdir / f"seg_{i:02d}.mp4"
-        L = render_segment(src_path, src, s, workdir / f"narr_{i:02d}.wav", durs[i],
+        L = render_segment(src_path, view, s, workdir / f"narr_{i:02d}.wav", durs[i],
                            lay, look, preset, out)
         seg_files.append(out)
         timings.append((t, durs[i]))
