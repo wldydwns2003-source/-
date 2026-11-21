@@ -191,10 +191,14 @@ def transcribe_original(src, preset):
     except ImportError:
         return ""
     log("  · 원본 음성 받아쓰는 중 (faster-whisper)...")
-    model = WhisperModel(preset.get("whisper_model", "small"), device="auto", compute_type="int8")
-    segs, _ = model.transcribe(str(src), vad_filter=True)
-    lines = [f"[{s.start:.1f}~{s.end:.1f}초] {s.text.strip()}" for s in segs]
-    return "\n".join(lines)
+    try:
+        model = WhisperModel(preset.get("whisper_model", "small"), device="auto", compute_type="int8")
+        segs, _ = model.transcribe(str(src), vad_filter=True)
+        lines = [f"[{s.start:.1f}~{s.end:.1f}초] {s.text.strip()}" for s in segs]
+        return "\n".join(lines)
+    except Exception as e:
+        log(f"  · 받아쓰기는 건너뛸게요 (오류: {type(e).__name__}). 장면만 보고 대본을 써요.")
+        return ""
 
 
 # ───────────────────────── 2. Claude 로 대본·편집 계획 ─────────────────────────
