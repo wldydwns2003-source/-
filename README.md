@@ -41,3 +41,6 @@ GitHub Actions가 매주 월요일 오전 `config.json`의 해시태그를 수�
 - **🔍 이 영상 원본 찾기** → Google 렌즈 선택 → 렌즈 검색창에 `instagram` / `tiktok` / `youtube` 추가
 
 **설정:** 저장소 Settings → Pages → Branch 선택 → Save 후 `https://<아이디>.github.io/<저장소>/lens/` 를 안드로이드 크롬으로 열기 → ⋮ → 앱 설치
+
+## 🎬 원본으로 쇼츠 자동 제작기 (`shorts_maker/`, Windows용)
+원본 영상 하나를 넣으면 대본, 타입캐스트 나레이션, 컷 편집, 자막, 제목까지 자동으로 만들어 줍니다. 사용법은 [shorts_maker/README.md](shorts_maker/README.md) 를 보세요.
