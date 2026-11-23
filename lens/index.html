@@ -33,6 +33,17 @@
   .pastebox { margin-top: 10px; min-height: 64px; border: 2px dashed var(--accent2); border-radius: 12px; padding: 12px;
     color: var(--text); text-align: center; outline: none; overflow: hidden; max-height: 120px; }
   .pastebox:empty::before { content: attr(data-ph); color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+  .scene { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  .scene img { width: 100%; aspect-ratio: 9 / 12; object-fit: contain; background: #000; display: block; }
+  .scene .meta { font-size: 12px; color: var(--muted); padding: 6px 8px 0; }
+  .scene .row { display: flex; gap: 6px; padding: 6px 8px 8px; }
+  .scene button { flex: 1; border: none; border-radius: 8px; padding: 9px 4px; font-size: 13px; font-weight: 700; color: #fff; background: var(--accent); }
+  .scene button { white-space: nowrap; }
+  .scene button:last-child { flex: 0 0 38px; }
+  .scene button.alt { background: var(--panel); border: 1px solid var(--line); color: var(--text); font-weight: 500; }
+  .bar { height: 8px; border-radius: 4px; background: var(--panel2); overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent2); transition: width .15s; }
   .kw { display: inline-block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; color: var(--text); }
 </style>
 </head>
@@ -43,12 +54,12 @@
   <section class="card">
     <label class="drop" id="drop" for="fileInput">
       <span style="font-size:34px">🖼️</span>
-      <b>캡처 사진 선택</b>
-      <span class="small">또는 스크린샷에서 <b>공유 → SNS검색</b></span>
+      <b>캡처 사진 · 쇼츠 영상 선택</b>
+      <span class="small">또는 스크린샷·영상에서 <b>공유 → SNS검색</b><br>영상을 넣으면 장면마다 원본을 따로 찾아요</span>
     </label>
     <button class="btn ghost" id="pasteBtn">📋 캡처한 사진 붙여넣기</button>
     <div id="pasteBox" class="pastebox hidden" contenteditable="true" data-ph="여기를 누르고 → 키보드 위 [붙여넣기] 누르기"></div>
-    <input type="file" id="fileInput" accept="image/*" class="hidden">
+    <input type="file" id="fileInput" accept="image/*,video/*" class="hidden">
     <label class="btn hidden" id="galleryBtn" for="fileInput" style="display:block;text-align:center">🖼️ 갤러리에서 방금 캡처 고르기</label>
 
     <img id="preview" class="preview hidden" alt="선택한 사진">
@@ -57,16 +68,26 @@
     <div class="status" id="status"></div>
   </section>
 
+  <section class="card hidden" id="videoCard">
+    <b>🎬 장면별 원본 찾기</b>
+    <div class="small" id="videoInfo"></div>
+    <div class="bar" id="bar"><i id="barFill"></i></div>
+    <div class="grid" id="grid"></div>
+    <button class="btn ghost hidden" id="videoChangeBtn">다른 영상 / 사진</button>
+  </section>
+
   <section class="card small">
     <b>찾는 방법</b>
     <ol class="small">
       <li><b>🔍 이 영상 원본 찾기</b> → 목록에서 <b>Google 렌즈</b>(또는 <b>Google</b>) 선택</li>
       <li>렌즈 결과 위 검색창에 <span class="kw">instagram</span> <span class="kw">tiktok</span> <span class="kw">youtube</span> 중 하나를 추가하면 그 SNS 게시물만 나와요</li>
+      <li><b>영상</b>을 넣으면 컷이 바뀌는 지점마다 장면을 잘라줘요. 짜깁기 쇼츠는 장면마다 원본이 달라서 <b>장면별로</b> 찾아야 해요 (위아래 흐린 여백은 자동으로 잘라요)</li>
+      <li><b>🔍 렌즈</b>: 폰 공유창 → Google 렌즈 / <b>🌐 웹</b>: 브라우저에서 구글 렌즈 결과 바로 열기 (PC용)</li>
       <li>렌즈 화면에서 네모 칸을 <b>영상 부분에만</b> 맞추면 더 잘 찾아요 (버튼·댓글 제외)</li>
     </ol>
     처음 한 번: 크롬 ⋮ → <b>앱 설치</b> 해두면 스크린샷 공유 목록에 <b>SNS검색</b>이 생겨요.
   </section>
-  <p class="small" style="text-align:center">버전 v7</p>
+  <p class="small" style="text-align:center">버전 v8</p>
 </div>
 
 <script>
@@ -79,6 +100,9 @@ function setStatus(msg, err = false) {
 }
 
 function setImage(file) {
+  if (file.type.startsWith('video/')) return setVideo(file);
+  videoJob++;
+  $('videoCard').classList.add('hidden');
   currentFile = file;
   $('preview').src = URL.createObjectURL(file);
   ['preview', 'findBtn', 'changeBtn'].forEach((id) => $(id).classList.remove('hidden'));
@@ -117,7 +141,7 @@ async function loadShared() {
     const blob = await res.blob();
     await cache.delete('./shared-image');
     setImage(new File([blob], 'shared.' + (blob.type.split('/')[1] || 'png'), { type: blob.type }));
-    setStatus('아래 빨간 버튼을 누르면 구글 렌즈로 원본을 찾아요.');
+    if (!blob.type.startsWith('video/')) setStatus('아래 빨간 버튼을 누르면 구글 렌즈로 원본을 찾아요.');
   } catch (e) { setStatus('공유 사진 읽기 실패: ' + e.message, true); }
 }
 
@@ -186,6 +210,203 @@ $('pasteBox').addEventListener('input', async () => {
   try { useBlob(await (await fetch(src)).blob(), 'pasted'); }
   catch { setStatus('붙여넣은 사진을 읽지 못했어요. 위의 "캡처 사진 선택"으로 골라주세요 (최근 사진이 맨 앞에 있어요).', true); }
 });
+
+// ---------- 영상 → 장면별 원본 찾기 ----------
+// 컷이 바뀌는 지점을 찾아 장면마다 가장 선명한 한 장을 뽑고, 위아래 흐린 여백을 잘라 렌즈로 넘깁니다.
+const STEP = 0.25;          // 몇 초마다 프레임을 볼지
+const CUT = 0.16;           // 이 이상 화면이 바뀌면 컷
+const MIN_SCENE = 0.75;     // 이보다 짧은 장면은 앞 장면에 합침
+const AW = 32, AH = 56;     // 컷 비교용 작은 크기
+let videoJob = 0;
+
+function seek(v, t) {
+  return new Promise((res, rej) => {
+    const done = () => { v.removeEventListener('seeked', done); v.removeEventListener('error', fail); res(); };
+    const fail = () => { v.removeEventListener('seeked', done); v.removeEventListener('error', fail); rej(new Error('영상 읽기 실패')); };
+    v.addEventListener('seeked', done); v.addEventListener('error', fail);
+    v.currentTime = t;
+  });
+}
+
+// 자막이 자주 들어가는 줄(세로 62~78%)은 컷 비교에서 뺌 — 자막만 바뀌어도 컷으로 잡히지 않게
+function smallFrame(ctx, v) {
+  ctx.drawImage(v, 0, 0, AW, AH);
+  const d = ctx.getImageData(0, 0, AW, AH).data;
+  const out = [];
+  const y0 = Math.floor(AH * 0.62), y1 = Math.floor(AH * 0.78);
+  for (let y = 0; y < AH; y++) {
+    if (y >= y0 && y < y1) continue;
+    for (let x = 0; x < AW; x++) { const i = (y * AW + x) * 4; out.push(d[i], d[i + 1], d[i + 2]); }
+  }
+  let sharp = 0;
+  for (let y = 0; y < AH; y++) for (let x = 1; x < AW; x++) {
+    const i = (y * AW + x) * 4;
+    sharp += Math.abs(d[i] + d[i + 1] + d[i + 2] - d[i - 4] - d[i - 3] - d[i - 2]);
+  }
+  return { px: out, sharp };
+}
+const diff = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length / 255; };
+
+function findCuts(diffs) {
+  const cuts = [];
+  for (let i = 0; i < diffs.length; i++) {
+    const d = diffs[i];
+    if (d < CUT) continue;
+    const near = [diffs[i - 2], diffs[i - 1], diffs[i + 1], diffs[i + 2]].filter((x) => x !== undefined).sort((a, b) => a - b);
+    const base = near.length ? near[Math.floor(near.length / 2)] : 0;
+    if (d >= base * 1.8) cuts.push(i + 1); // 프레임 i → i+1 사이에서 컷
+  }
+  return cuts;
+}
+
+// 위아래(좌우)의 흐린/검은 여백 찾기: 줄마다 가로 변화량이 너무 작으면 여백으로 봄
+function contentBox(ctx, v, W, H) {
+  const w = 90, h = Math.round(90 * H / W);
+  ctx.canvas.width = w; ctx.canvas.height = h;
+  ctx.drawImage(v, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const lum = (x, y) => { const i = (y * w + x) * 4; return d[i] + d[i + 1] + d[i + 2]; };
+  const rows = [], cols = [];
+  for (let y = 0; y < h; y++) { let s = 0; for (let x = 1; x < w; x++) s += Math.abs(lum(x, y) - lum(x - 1, y)); rows.push(s / w); }
+  for (let x = 0; x < w; x++) { let s = 0; for (let y = 1; y < h; y++) s += Math.abs(lum(x, y) - lum(x, y - 1)); cols.push(s / h); }
+  const trim = (arr) => {
+    const sorted = [...arr].sort((a, b) => a - b);
+    const ref = sorted[Math.floor(sorted.length * 0.75)];
+    const low = (x) => x < ref * 0.3;
+    const max = Math.floor(arr.length * 0.3);
+    let a = 0, b = arr.length;
+    while (a < max && low(arr[a])) a++;
+    while (arr.length - b < max && low(arr[b - 1])) b--;
+    return [a / arr.length, b / arr.length];
+  };
+  const [top, bottom] = trim(rows), [left, right] = trim(cols);
+  return { x: left * W, y: top * H, w: (right - left) * W, h: (bottom - top) * H };
+}
+
+const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+async function setVideo(file) {
+  const job = ++videoJob;
+  currentFile = null;
+  ['drop', 'pasteBtn', 'pasteBox', 'galleryBtn', 'preview', 'findBtn', 'changeBtn'].forEach((id) => $(id).classList.add('hidden'));
+  ['videoCard', 'bar'].forEach((id) => $(id).classList.remove('hidden'));
+  $('videoChangeBtn').classList.add('hidden');
+  $('grid').innerHTML = '';
+  $('barFill').style.width = '0';
+  setStatus('');
+  $('videoInfo').textContent = '영상 불러오는 중…';
+
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto';
+  v.src = URL.createObjectURL(file);
+  try {
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('이 영상 형식을 브라우저가 열 수 없어요')); });
+    const dur = v.duration, W = v.videoWidth, H = v.videoHeight;
+    const small = document.createElement('canvas'); small.width = AW; small.height = AH;
+    const sctx = small.getContext('2d', { willReadFrequently: true });
+
+    // 1) 일정 간격으로 훑으며 화면 변화량 기록
+    const frames = [];
+    for (let t = 0.05; t < dur - 0.05; t += STEP) {
+      if (job !== videoJob) return;
+      await seek(v, t);
+      frames.push({ t, ...smallFrame(sctx, v) });
+      $('barFill').style.width = (t / dur * 80) + '%';
+      $('videoInfo').textContent = `장면 나누는 중… ${fmt(t)} / ${fmt(dur)}`;
+    }
+    const diffs = frames.slice(1).map((f, i) => diff(frames[i].px, f.px));
+
+    // 2) 컷 지점으로 장면 나누기 (너무 짧은 장면은 합침)
+    let bounds = [0, ...findCuts(diffs), frames.length];
+    const scenes = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const s = bounds[i], e = bounds[i + 1];
+      if (e <= s) continue;
+      if (scenes.length && (e - s) * STEP < MIN_SCENE) { scenes[scenes.length - 1].e = e; continue; }
+      scenes.push({ s, e });
+    }
+    if (scenes.length > 1 && (scenes[scenes.length - 1].e - scenes[scenes.length - 1].s) * STEP < MIN_SCENE) {
+      const last = scenes.pop(); scenes[scenes.length - 1].e = last.e;
+    }
+
+    // 3) 장면마다 가장 선명한 프레임 고르기, 바로 앞 장면과 거의 같은 화면이면 건너뜀
+    const picks = [];
+    for (const sc of scenes) {
+      const pool = frames.slice(sc.s, sc.e);
+      const inner = pool.length > 2 ? pool.slice(1, -1) : pool; // 컷 바로 옆(전환 효과) 제외
+      const best = inner.reduce((a, b) => (b.sharp > a.sharp ? b : a));
+      if (picks.length && diff(picks[picks.length - 1].f.px, best.px) < 0.07) continue;
+      picks.push({ f: best, start: frames[sc.s].t, end: frames[sc.e - 1].t + STEP });
+    }
+
+    // 4) 원본 해상도로 캡처 + 여백 자르기
+    const big = document.createElement('canvas');
+    const bctx = big.getContext('2d', { willReadFrequently: true });
+    $('videoInfo').textContent = `장면 ${picks.length}개 캡처 중…`;
+    for (let i = 0; i < picks.length; i++) {
+      if (job !== videoJob) return;
+      const p = picks[i];
+      await seek(v, p.f.t);
+      const box = contentBox(bctx, v, W, H);
+      big.width = Math.round(box.w); big.height = Math.round(box.h);
+      bctx.drawImage(v, box.x, box.y, box.w, box.h, 0, 0, big.width, big.height);
+      const blob = await new Promise((r) => big.toBlob(r, 'image/jpeg', 0.92));
+      addScene(blob, i + 1, p.start, Math.min(p.end, dur));
+      $('barFill').style.width = (80 + (i + 1) / picks.length * 20) + '%';
+    }
+    $('bar').classList.add('hidden');
+    $('videoInfo').textContent = `${fmt(dur)} 영상에서 장면 ${picks.length}개를 찾았어요. 장면마다 🔍 렌즈로 원본을 찾아보세요.`;
+  } catch (e) {
+    $('bar').classList.add('hidden');
+    $('videoInfo').textContent = '';
+    setStatus(e.message + '\n(안드로이드 크롬 최신 버전에서 다시 시도해 보세요)', true);
+  } finally {
+    URL.revokeObjectURL(v.src);
+    $('videoChangeBtn').classList.remove('hidden');
+  }
+}
+
+function addScene(blob, n, start, end) {
+  const file = new File([blob], `scene-${n}.jpg`, { type: 'image/jpeg' });
+  const el = document.createElement('div');
+  el.className = 'scene';
+  el.innerHTML = `<img alt="장면 ${n}"><div class="meta">장면 ${n} · ${fmt(start)}–${fmt(end)}</div>
+    <div class="row"><button>🔍 렌즈</button><button class="alt">🌐 웹</button><button class="alt">💾</button></div>`;
+  el.querySelector('img').src = URL.createObjectURL(blob);
+  const [lens, web, save] = el.querySelectorAll('button');
+  lens.onclick = () => shareToLens(file);
+  web.onclick = () => openLensWeb(file);
+  save.onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click(); };
+  $('grid').appendChild(el);
+}
+
+async function shareToLens(file) {
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      setStatus('렌즈 결과 위 검색창에 instagram / tiktok / youtube 를 추가해 보세요.');
+    } catch (e) { if (e.name !== 'AbortError') setStatus('공유 실패: ' + e.message, true); }
+  } else {
+    openLensWeb(file);
+  }
+}
+
+// 구글 렌즈 웹에 사진을 바로 올려 새 탭에서 결과 열기 (PC 크롬 등)
+function openLensWeb(file) {
+  const form = document.createElement('form');
+  form.method = 'POST'; form.enctype = 'multipart/form-data'; form.target = '_blank';
+  form.action = 'https://lens.google.com/v3/upload';
+  const input = document.createElement('input');
+  input.type = 'file'; input.name = 'encoded_image';
+  const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files;
+  form.appendChild(input);
+  form.style.display = 'none';
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
+
+$('videoChangeBtn').onclick = () => { videoJob++; $('fileInput').value = ''; $('fileInput').click(); };
 
 // ---------- 시작 ----------
 if ('serviceWorker' in navigator) {
