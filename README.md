@@ -46,3 +46,12 @@ GitHub Actions가 매주 월요일 오전 `config.json`의 해시태그를 수�
 - **💾**: 장면 사진 저장
 
 **설정:** 저장소 Settings → Pages → Branch 선택 → Save 후 `https://<아이디>.github.io/<저장소>/lens/` 를 안드로이드 크롬으로 열기 → ⋮ → 앱 설치
+
+## 🔎 쇼츠 원본 자동 찾기 (`finder/`, PC/서버용)
+짜깁기 쇼츠 영상 파일을 넣으면 장면을 나눠 **장면마다 이미지 검색**을 하고, 여러 장면에서 반복해서 걸린 유튜브·틱톡 영상을 **원본 후보 + 올린 사람**으로 정리해 줍니다. 키 불필요.
+
+```bash
+pip install numpy pillow requests   # ffmpeg 필요
+python3 finder/find_original.py 영상1.mp4 영상2.mp4 --out 결과
+```
+결과 폴더에 장면 사진(`scene-01.jpg`…)과 `report.md`(원본 영상 후보 → 같은 장면이 나온 페이지 → 장면별 결과)가 생깁니다.
