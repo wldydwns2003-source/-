@@ -48,10 +48,12 @@ GitHub Actions가 매주 월요일 오전 `config.json`의 해시태그를 수�
 **설정:** 저장소 Settings → Pages → Branch 선택 → Save 후 `https://<아이디>.github.io/<저장소>/lens/` 를 안드로이드 크롬으로 열기 → ⋮ → 앱 설치
 
 ## 🔎 쇼츠 원본 자동 찾기 (`finder/`, PC/서버용)
-짜깁기 쇼츠 영상 파일을 넣으면 장면을 나눠 **장면마다 이미지 검색**을 하고, 여러 장면에서 반복해서 걸린 유튜브·틱톡 영상을 **원본 후보 + 올린 사람**으로 정리해 줍니다. 키 불필요.
+짜깁기 쇼츠 영상 파일을 넣으면 장면을 나눠 장면마다 이미지 검색을 하고, 결과 썸네일을 **내 영상 프레임과 그림으로 직접 대조**해서 진짜 같은 장면인 출처만 정리합니다. 좌우 반전된 영상도 찾고, 틱톡 원본은 **워터마크 없는 영상 파일까지** 받아 둡니다. 키 불필요.
 
 ```bash
-pip install numpy pillow requests   # ffmpeg 필요
-python3 finder/find_original.py 영상1.mp4 영상2.mp4 --out 결과
+pip install numpy pillow requests opencv-python-headless   # ffmpeg 필요
+python3 finder/find_original.py 영상.mp4 --out 결과
+python3 finder/find_original.py 영상.mp4 --out 결과 --query "hostile architecture"   # 주제어를 알면 더 잘 찾음
+python3 finder/find_original.py --get https://www.tiktok.com/@아이디/video/숫자 --out 받은영상   # 틱톡 영상만 받기
 ```
-결과 폴더에 장면 사진(`scene-01.jpg`…)과 `report.md`(원본 영상 후보 → 같은 장면이 나온 페이지 → 장면별 결과)가 생깁니다.
+결과 폴더에 장면 사진, `originals/`(받은 틱톡 원본), `report.md`(확인된 출처 → 받은 영상 → 장면별 출처)가 생깁니다. 영상 하나에 20~25분 정도 걸립니다.

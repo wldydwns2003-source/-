@@ -3,6 +3,7 @@
 
 사용법:
     python3 finder/find_original.py 영상1.mp4 [영상2.mp4 ...] [--out 결과폴더] [--query 검색어 ...]
+    python3 finder/find_original.py --get 틱톡주소 [--out 폴더]      ← 틱톡 영상만 받기
     (필요: ffmpeg, pip install numpy pillow requests opencv-python-headless)
 
 1) 컷이 바뀌는 지점마다 장면을 나누고, 장면마다 선명한 한 장을 뽑아 위아래 흐린 여백을 자름
@@ -11,6 +12,7 @@
 3) 검색 결과 썸네일을 내 영상의 모든 프레임과 특징점 매칭으로 직접 비교해서, 진짜 같은 장면인 것만 남김
 4) 확인된 결과의 제목으로 유튜브를 다시 검색해 후보 영상을 모으고, 그 영상의 프레임 썸네일도 같은 방식으로 대조
 5) 장면별 출처와, 여러 장면을 가진 원본 후보(제목·올린 사람·길이)를 report.md 로 정리
+6) 틱톡 원본은 워터마크 없는 영상 파일까지 받아 둠 (--no-download 로 끔)
 """
 import argparse
 import html
@@ -359,6 +361,37 @@ def fetch_image(session, url):
     return None
 
 
+# ---------- 틱톡 영상 받기 ----------
+def download_tiktok(session, url, dest_dir):
+    """틱톡 영상을 워터마크 없이 받음 (tikwm.com 경유). → 저장한 파일 경로, 실패하면 오류 문구"""
+    m = re.search(r'/video/(\d+)', url)
+    if not m:
+        return None, '틱톡 영상 주소가 아니에요'
+    vid = m.group(1)
+    try:
+        j = session.post('https://www.tikwm.com/api/', data={'url': url, 'hd': 1}, timeout=30).json()
+    except Exception as e:
+        return None, f'tikwm 접속 실패: {e}'
+    d = j.get('data') or {}
+    if j.get('code') != 0 or not d:
+        return None, f"tikwm 오류: {j.get('msg')}"
+    author = (d.get('author') or {}).get('unique_id', '') or 'tiktok'
+    Path(dest_dir).mkdir(parents=True, exist_ok=True)
+    errors = []
+    for kind in ('hdplay', 'play'):
+        dest = Path(dest_dir) / f'{author}_{vid}{"_HD" if kind == "hdplay" else ""}.mp4'
+        try:
+            r = session.get(f'https://www.tikwm.com/video/media/{kind}/{vid}.mp4', timeout=120)
+            if r.ok and len(r.content) > 50000 and r.content[4:8] == b'ftyp':
+                dest.write_bytes(r.content)
+                return dest, ''
+            errors.append(f'{kind}: HTTP {r.status_code}')
+        except Exception as e:
+            host = re.search(r"host='([^']+)'", str(e))
+            errors.append(f"{kind}: {'영상 서버 ' + host.group(1) + ' 접속이 막혀 있어요' if host else e}")
+    return None, '; '.join(errors)
+
+
 # ---------- 유튜브 ----------
 def youtube_search(session, query, limit=15):
     body = {'query': query, 'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20250101.00.00',
@@ -453,7 +486,18 @@ def main():
     ap.add_argument('--out', default='finder-results')
     ap.add_argument('--query', action='append', default=[], help='유튜브에서 추가로 찾아볼 검색어 (여러 번 가능)')
     ap.add_argument('--no-search', action='store_true', help='장면 사진만 뽑고 검색은 안 함')
+    ap.add_argument('--no-download', action='store_true', help='찾은 틱톡 원본 영상을 받지 않음')
+    ap.add_argument('--get', action='store_true', help='videos 자리에 틱톡 주소를 넣으면 영상만 받음')
     args = ap.parse_args()
+
+    if args.get:   # 틱톡 주소 → 영상 파일만 받기
+        import requests
+        se = requests.Session()
+        se.headers['User-Agent'] = UA
+        for u in args.videos:
+            path, err = download_tiktok(se, u, args.out)
+            print(f'{u}\n  → {path}' if path else f'{u}\n  → 실패: {err}')
+        return
 
     from concurrent.futures import ThreadPoolExecutor
     from PIL import ImageOps
@@ -607,6 +651,16 @@ def main():
             summary = (f'**장면 {n_sc}개 중 {covered}개의 출처를 그림으로 확인했어요.**'
                        + (f" 못 찾은 장면: {', '.join(map(str, missing))}" if missing else ''))
             report.insert(report.index('\n### ✅ 그림으로 확인된 출처 (같은 장면이 많은 순)\n'), summary)
+            # 틱톡 원본은 영상 파일까지 받아 둠 (같은 장면이 많은 순으로 최대 5개)
+            if not args.no_download:
+                tts = [s for s in ranked if s['site'] == 'tiktok' and '/video/' in s['url']][:5]
+                if tts:
+                    report.append('\n### 📥 받아 둔 틱톡 원본 영상\n')
+                for s in tts:
+                    path, err = download_tiktok(engine.s, s['url'], vdir / 'originals')
+                    report.append(f"- [{s['url']}]({s['url']}) → " +
+                                  (f'`{path.relative_to(out)}`' if path else f'받기 실패 ({err})'))
+                    print(f"  틱톡 받기: {s['url']} → {path or '실패: ' + err}", flush=True)
             report.append('\n### 장면별 출처\n')
             report += scene_lines
             print(f'  출처 확인: 장면 {covered}/{n_sc}개', flush=True)
