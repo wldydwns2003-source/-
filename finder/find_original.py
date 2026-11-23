@@ -384,7 +384,8 @@ def download_tiktok(session, url, dest_dir):
             r = session.get(f'https://www.tikwm.com/video/media/{kind}/{vid}.mp4', timeout=120)
             if r.ok and len(r.content) > 50000 and r.content[4:8] == b'ftyp':
                 dest.write_bytes(r.content)
-                return dest, ''
+                note = '' if kind == 'hdplay' else f"HD는 실패해서 일반 화질로 받음 ({'; '.join(errors)})"
+                return dest, note
             errors.append(f'{kind}: HTTP {r.status_code}')
         except Exception as e:
             host = re.search(r"host='([^']+)'", str(e))
@@ -496,7 +497,7 @@ def main():
         se.headers['User-Agent'] = UA
         for u in args.videos:
             path, err = download_tiktok(se, u, args.out)
-            print(f'{u}\n  → {path}' if path else f'{u}\n  → 실패: {err}')
+            print(f'{u}\n  → {path}' + (f' ({err})' if err else '') if path else f'{u}\n  → 실패: {err}')
         return
 
     from concurrent.futures import ThreadPoolExecutor
@@ -659,7 +660,8 @@ def main():
                 for s in tts:
                     path, err = download_tiktok(engine.s, s['url'], vdir / 'originals')
                     report.append(f"- [{s['url']}]({s['url']}) → " +
-                                  (f'`{path.relative_to(out)}`' if path else f'받기 실패 ({err})'))
+                                  (f'`{path.relative_to(out)}`' + (f' — {err}' if err else '') if path
+                                   else f'받기 실패 ({err})'))
                     print(f"  틱톡 받기: {s['url']} → {path or '실패: ' + err}", flush=True)
             report.append('\n### 장면별 출처\n')
             report += scene_lines
