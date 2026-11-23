@@ -186,7 +186,18 @@ class Yandex:
         self.s = requests.Session()
         self.s.headers['User-Agent'] = UA
 
-    def search(self, img_path):
+    def search(self, img_path, tries=3):
+        for i in range(tries):   # 네트워크가 잠깐 끊기면 다시 시도
+            try:
+                return self._search(img_path)
+            except RuntimeError:
+                raise
+            except Exception:
+                if i == tries - 1:
+                    raise
+                time.sleep(3 * (i + 1))
+
+    def _search(self, img_path):
         with open(img_path, 'rb') as f:
             r = self.s.post('https://yandex.com/images/search', timeout=40, params={
                 'rpt': 'imageview', 'format': 'json',
