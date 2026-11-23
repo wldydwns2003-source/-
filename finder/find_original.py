@@ -2,13 +2,15 @@
 """짜깁기 쇼츠 영상 → 장면별 원본 영상 찾기.
 
 사용법:
-    python3 finder/find_original.py 영상1.mp4 [영상2.mp4 ...]
-    (필요: ffmpeg, pip install numpy pillow requests) [--out 결과폴더] [--no-search]
+    python3 finder/find_original.py 영상1.mp4 [영상2.mp4 ...] [--out 결과폴더] [--query 검색어 ...]
+    (필요: ffmpeg, pip install numpy pillow requests opencv-python-headless)
 
-1) 컷이 바뀌는 지점마다 장면을 나눔 (자막만 바뀌는 건 무시)
-2) 장면마다 가장 선명한 프레임을 뽑고 위아래 흐린 여백을 잘라 JPG로 저장
-3) 각 장면 사진을 얀덱스 이미지 검색에 올려 결과를 모으고, 유튜브·틱톡 영상은 제목·올린 사람까지 확인
-4) 여러 장면에서 반복해서 나온 링크일수록 원본일 가능성이 높으므로 위로 정렬해 report.md 로 저장
+1) 컷이 바뀌는 지점마다 장면을 나누고, 장면마다 선명한 한 장을 뽑아 위아래 흐린 여백을 자름
+2) 장면 사진을 얀덱스 이미지 검색에 올림 — 좌우 반전한 사진으로도 검색
+   (짜깁기 영상은 원본을 좌우 반전해서 올리는 경우가 많음)
+3) 검색 결과 썸네일을 내 영상의 모든 프레임과 특징점 매칭으로 직접 비교해서, 진짜 같은 장면인 것만 남김
+4) 확인된 결과의 제목으로 유튜브를 다시 검색해 후보 영상을 모으고, 그 영상의 프레임 썸네일도 같은 방식으로 대조
+5) 장면별 출처와, 여러 장면을 가진 원본 후보(제목·올린 사람·길이)를 report.md 로 정리
 """
 import argparse
 import html
@@ -126,7 +128,7 @@ def content_box(img):
     return (round(l * img.width), round(t * img.height), round(r * img.width), round(b * img.height))
 
 
-# ---------- 구글 렌즈 검색 ----------
+# ---------- 링크 정리 ----------
 def site_of(url):
     host = urlparse(url).netloc.lower()
     for name, hosts in SITES.items():
@@ -201,15 +203,17 @@ class Yandex:
         sites = json.JSONDecoder().raw_decode(page[i + 8:])[0] if i >= 0 else []
         found = {}
 
-        def add(url, title, rank, domain=''):
+        def add(url, title, rank, thumb, domain=''):
             if url and url not in found:
                 found[url] = {'url': url, 'site': site_of(url) or domain, 'video': is_video(url),
-                              'title': title, 'rank': rank}
+                              'title': title, 'rank': rank, 'thumb': thumb}
 
         for rank, it in enumerate(sites):
             title = (it.get('title') or '').strip()
-            add(clean(it.get('url', '')), title, rank, it.get('domain', ''))
-            add(video_from_thumb((it.get('originalImage') or {}).get('url')), '', rank)
+            thumb = (it.get('thumb') or {}).get('url', '')
+            thumb = 'https:' + thumb if thumb.startswith('//') else thumb
+            add(clean(it.get('url', '')), title, rank, thumb, it.get('domain', ''))
+            add(video_from_thumb((it.get('originalImage') or {}).get('url')), title, rank, thumb)
         return list(found.values()), page_url
 
     def oembed(self, url):
@@ -244,76 +248,310 @@ class Yandex:
         self.s.close()
 
 
+# ---------- 그림 대조 (특징점 매칭) ----------
+MATCH = 25   # 이 이상 특징점이 기하학적으로 맞으면 같은 장면으로 봄 (다른 장면은 보통 10 이하)
+
+
+class Matcher:
+    """내 영상의 모든 프레임(초당 2장)을 기억해 두고, 아무 사진이나 어느 시점과 같은지 찾음."""
+
+    def __init__(self, video, scenes):
+        import cv2
+        self.cv2 = cv2
+        self.orb = cv2.ORB_create(1500)
+        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+        raw = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(video), '-vf', 'fps=2,scale=-2:640',
+                              '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '3', '-'],
+                             capture_output=True, check=True).stdout
+        self.frames = []
+        for i, chunk in enumerate(raw.split(b'\xff\xd9')[:-1]):
+            import io
+            im = Image.open(io.BytesIO(chunk + b'\xff\xd9')).convert('RGB')
+            self.frames.append((i / 2, self.features(im.crop(content_box(im)))))
+        self.scenes = scenes   # [(start, end), ...]
+        # 모든 프레임의 특징점을 한 덩어리로 모아 두고, 질문 사진과 한 번에 비교해 후보 프레임만 추림
+        rows, owner = [], []
+        for i, (_, (kp, des)) in enumerate(self.frames):
+            if des is not None:
+                rows.append(des)
+                owner.append(np.full(len(des), i))
+        self.all_des = np.vstack(rows)
+        self.owner = np.concatenate(owner)
+
+    def features(self, im):
+        a = np.asarray(im.convert('L'))
+        h, w = a.shape
+        k = 480 / max(h, w)
+        return self.orb.detectAndCompute(self.cv2.resize(a, (max(1, int(w * k)), max(1, int(h * k)))), None)
+
+    def score(self, A, B):
+        (ka, da), (kb, db) = A, B
+        if da is None or db is None or len(ka) < 10 or len(kb) < 10:
+            return 0
+        good = [p[0] for p in self.bf.knnMatch(da, db, k=2) if len(p) == 2 and p[0].distance < 0.75 * p[1].distance]
+        if len(good) < 8:
+            return 0
+        src = np.float32([ka[m.queryIdx].pt for m in good])
+        dst = np.float32([kb[m.trainIdx].pt for m in good])
+        _, mask = self.cv2.findHomography(src, dst, self.cv2.RANSAC, 8.0)
+        return int(mask.sum()) if mask is not None else 0
+
+    def scene_at(self, t):
+        for n, (s, e) in enumerate(self.scenes, 1):
+            if s <= t < e:
+                return n
+        return len(self.scenes)
+
+    def locate(self, im):
+        """사진이 내 영상의 어느 장면과 같은지. 좌우 반전도 시도. → (점수, 장면번호, 시각, 반전여부) 또는 None"""
+        from PIL import ImageOps
+        w, h = im.size
+        if w > h * 1.1:   # 가로 썸네일 안에 세로 영상이 있으면 가운데만
+            cw = int(h * 9 / 16)
+            narrow = im.crop(((w - cw) // 2, 0, (w + cw) // 2, h))
+            cands = [im, narrow]
+        else:
+            cands = [im]
+        best = None
+        for c in cands:
+            for flip in (False, True):
+                F = self.features(ImageOps.mirror(c) if flip else c)
+                if F[1] is None or len(F[0]) < 10:
+                    continue
+                ms = self.bf.match(F[1], self.all_des)
+                votes = np.bincount([self.owner[m.trainIdx] for m in ms if m.distance < 40],
+                                    minlength=len(self.frames))
+                for i in np.argsort(votes)[::-1][:3]:
+                    if votes[i] < 5:
+                        break
+                    t, A = self.frames[i]
+                    sc = self.score(F, A)
+                    if sc >= MATCH and (not best or sc > best[0]):
+                        best = (sc, self.scene_at(t), t, flip)
+        return best
+
+
+def fetch_image(session, url):
+    import io
+    try:
+        r = session.get(url, timeout=20)
+        if r.ok and len(r.content) > 1500:
+            return Image.open(io.BytesIO(r.content)).convert('RGB')
+    except Exception:
+        pass
+    return None
+
+
+# ---------- 유튜브 ----------
+def youtube_search(session, query, limit=15):
+    body = {'query': query, 'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20250101.00.00',
+                                                   'hl': 'en', 'gl': 'US'}}}
+    try:
+        j = session.post('https://www.youtube.com/youtubei/v1/search', json=body, timeout=30).json()
+    except Exception:
+        return []
+    out = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            if 'videoRenderer' in o:
+                v = o['videoRenderer']
+                out.append({'id': v['videoId'], 'title': ''.join(r['text'] for r in v['title'].get('runs', [])),
+                            'author': (v.get('ownerText', {}).get('runs') or [{}])[0].get('text', ''),
+                            'length': v.get('lengthText', {}).get('simpleText', ''),
+                            'views': v.get('viewCountText', {}).get('simpleText', '')})
+                return
+            if 'shortsLockupViewModel' in o:
+                v = o['shortsLockupViewModel']
+                m = re.search(r'"videoId": ?"([\w-]{11})"', json.dumps(v)) or \
+                    re.search(r'shorts-shelf-item-([\w-]{11})', json.dumps(v))
+                if m:
+                    meta = v.get('overlayMetadata', {})
+                    out.append({'id': m.group(1), 'title': meta.get('primaryText', {}).get('content', ''),
+                                'author': '', 'length': '쇼츠', 'views': meta.get('secondaryText', {}).get('content', '')})
+                return
+            for x in o.values():
+                walk(x)
+        elif isinstance(o, list):
+            for x in o:
+                walk(x)
+    walk(j)
+    return out[:limit]
+
+
+def youtube_frames(session, vid):
+    imgs = []
+    for n in ('oardefault', 'hq1', 'hq2', 'hq3', 'hqdefault'):
+        im = fetch_image(session, f'https://i.ytimg.com/vi/{vid}/{n}.jpg')
+        if im is not None and im.size[0] > 130:
+            imgs.append(im)
+    return imgs
+
+
+STOP = set('the a an of and or to in on for with is are be this that you your it its from by at as how why what '
+           'video videos shorts short youtube tiktok instagram vk watch clip clips online free full hd new'.split())
+
+
+def queries_from_titles(titles, extra, limit=8):
+    qs, seen = list(extra), set()
+    for t in titles:
+        t = re.sub(r'\s*[-|–]\s*(YouTube|TikTok|Instagram|VK.*|Pinterest|Facebook).*$', '', t, flags=re.I)
+        t = re.sub(r'#\S+', '', t)
+        words = [w for w in re.findall(r"[\w'’]+", t) if w.lower() not in STOP]
+        q = ' '.join(words[:8])
+        if len(q) >= 8 and q.lower() not in seen:
+            seen.add(q.lower())
+            qs.append(q)
+    return qs[:limit]
+
+
 def main():
     ap = argparse.ArgumentParser(description='짜깁기 쇼츠의 장면별 원본 영상 찾기')
     ap.add_argument('videos', nargs='+')
     ap.add_argument('--out', default='finder-results')
+    ap.add_argument('--query', action='append', default=[], help='유튜브에서 추가로 찾아볼 검색어 (여러 번 가능)')
     ap.add_argument('--no-search', action='store_true', help='장면 사진만 뽑고 검색은 안 함')
     args = ap.parse_args()
 
+    from concurrent.futures import ThreadPoolExecutor
+    from PIL import ImageOps
     out = Path(args.out)
     engine = None if args.no_search else Yandex()
     report = ['# 원본 영상 찾기 결과\n']
+    pool = ThreadPoolExecutor(8)
     try:
         for vid in map(Path, args.videos):
             _, _, dur = probe(vid)
             picks = split_scenes(small_frames(vid))
             vdir = out / vid.stem
             vdir.mkdir(parents=True, exist_ok=True)
-            print(f'\n== {vid.name}: {dur:.0f}초, 장면 {len(picks)}개', flush=True)
-            report.append(f'\n## {vid.name} ({dur:.0f}초, 장면 {len(picks)}개)\n')
-            score = defaultdict(lambda: {'scenes': [], 'pts': 0.0})
-            scene_lines = []
+            n_sc = len(picks)
+            print(f'\n== {vid.name}: {dur:.0f}초, 장면 {n_sc}개', flush=True)
+            report.append(f'\n## {vid.name} ({dur:.0f}초, 장면 {n_sc}개)\n')
+            imgs = []
             for n, (k, start, end) in enumerate(picks, 1):
                 img = vdir / f'scene-{n:02d}.jpg'
                 grab(vid, k / FPS + 0.5 / FPS, img)
-                line = f'- **장면 {n}** ({start:.1f}–{end:.1f}초) `{img.relative_to(out)}`'
-                if engine:
+                imgs.append(img)
+            if not engine:
+                report += [f'- 장면 {n} ({s:.1f}–{e:.1f}초) `{i.relative_to(out)}`' for n, ((_, s, e), i) in
+                           enumerate(zip(picks, imgs), 1)]
+                continue
+
+            matcher = Matcher(vid, [(s, e) for _, s, e in picks])
+            sources = {}   # url → 확인된 출처 정보
+
+            def verify(item, img):
+                if img is None:
+                    return None
+                hit = matcher.locate(img)
+                return (item, hit) if hit else None
+
+            def record(item, hit):
+                sc, scene, t, flip = hit
+                src = sources.setdefault(item['url'], {**item, 'scenes': {}, 'flip': 0, 'n': 0})
+                src['scenes'][scene] = max(src['scenes'].get(scene, 0), sc)
+                src['flip'] += flip
+                src['n'] += 1
+
+            # 1) 얀덱스: 장면 사진 + 좌우 반전 사진으로 검색 → 썸네일을 직접 대조
+            raw_titles = []
+            for n, img in enumerate(imgs, 1):
+                hits = []
+                for flip in (False, True):
+                    path = img
+                    if flip:
+                        path = vdir / f'.flip-{n:02d}.jpg'
+                        ImageOps.mirror(Image.open(img)).save(path, quality=92)
                     try:
-                        hits, page = engine.search(img)
-                        line += f' — [검색 결과 전체]({page})'
-                    except Exception as e:  # 한 장면 실패해도 계속
-                        hits = []
-                        line += f' — 검색 실패: {e}'
-                    time.sleep(1.5)
-                    vids = [h for h in hits if h['video']]
-                    print(f'  장면 {n}: 결과 {len(hits)}개 (영상 {len(vids)}개)', flush=True)
-                    for h in hits:
-                        sc = score[h['url']]
-                        sc.update(site=h['site'], video=h['video'])
-                        sc['title'] = sc.get('title') or h['title']
-                        sc['scenes'].append(n)
-                        sc['pts'] += 1 / (1 + h['rank'] / 5)
-                    for h in vids[:3] + [h for h in hits if not h['video']][:2]:
-                        line += f"\n  - {'🎬 ' if h['video'] else ''}[{h['site']}] [{h['title'] or h['url']}]({h['url']})"
-                scene_lines.append(line)
-            if engine:
-                # 여러 장면에서 반복해서 걸린 링크일수록 원본(또는 같은 원본을 쓴 영상)일 가능성이 큼
-                key = lambda kv: (-len(set(kv[1]['scenes'])), -kv[1]['pts'])
-                vids = sorted(((u, v) for u, v in score.items() if v['video']), key=key)[:15]
-                pages = sorted(((u, v) for u, v in score.items() if not v['video']), key=key)[:10]
-                report.append('\n### 🎬 원본 영상 후보 (여러 장면에서 걸린 순)\n')
-                if not vids:
-                    report.append('영상 링크를 못 찾았어요. 아래 관련 페이지나 장면 사진으로 직접 렌즈 검색을 해 보세요.\n')
-                for url, sc in vids:
-                    info = engine.oembed(url)
-                    sn = sorted(set(sc['scenes']))
+                        hits += engine.search(path)[0][:20]
+                    except Exception as e:
+                        print(f'  장면 {n}: 검색 실패 ({e})', flush=True)
+                    if flip:
+                        path.unlink(missing_ok=True)
+                    time.sleep(1)
+                thumbs = list(pool.map(lambda h: fetch_image(engine.s, h['thumb']) if h['thumb'] else None, hits))
+                ok = [r for r in pool.map(lambda a: verify(*a), zip(hits, thumbs)) if r]
+                for item, hit in ok:
+                    record(item, hit)
+                    raw_titles.append(item['title'])
+                print(f'  장면 {n}: 검색 결과 {len(hits)}개 중 같은 장면 확인 {len(ok)}개', flush=True)
+
+            # 2) 유튜브: 확인된 결과 제목 + 직접 준 검색어로 검색 → 후보 영상의 프레임 썸네일 대조
+            ytc = {}
+            for url, src in sources.items():
+                m = re.search(r'watch\?v=([\w-]{11})', url)
+                if m:
+                    ytc.setdefault(m.group(1), {'title': src['title']})
+            counts = defaultdict(int)
+            for t in raw_titles:
+                counts[t] += 1
+            queries = queries_from_titles(sorted(counts, key=lambda t: -counts[t]), args.query)
+            for q in queries:
+                for r in youtube_search(engine.s, q):
+                    ytc.setdefault(r['id'], r)
+            print(f'  유튜브 검색어 {len(queries)}개 → 후보 영상 {len(ytc)}개 대조 중…', flush=True)
+
+            def check_yt(item):
+                vid_id, info = item
+                hits = [matcher.locate(im) for im in youtube_frames(engine.s, vid_id)]
+                return vid_id, info, [h for h in hits if h]
+            for vid_id, info, hits in pool.map(check_yt, ytc.items()):
+                url = f'https://www.youtube.com/watch?v={vid_id}'
+                for h in hits:
+                    record({'url': url, 'site': 'youtube', 'video': True, 'title': info.get('title', ''),
+                            'length': info.get('length', ''), 'views': info.get('views', ''),
+                            'author': info.get('author', '')}, h)
+
+            # 3) 정리
+            if not sources:
+                report.append('확인된 출처가 없어요. 장면 사진으로 직접 구글 렌즈 검색을 해 보세요.\n')
+            flips = sum(s['flip'] for s in sources.values())
+            total = sum(s['n'] for s in sources.values())
+            if total and flips / total > 0.6:
+                report.append('> ⚠️ 이 영상은 원본을 **좌우 반전**해서 만들었어요 (확인된 일치의 '
+                              f'{flips * 100 // total}%가 반전 상태에서 맞음).\n')
+
+            ranked = sorted(sources.values(), key=lambda s: (-len(s['scenes']), -s['video'], -sum(s['scenes'].values())))
+            for s in ranked[:25]:
+                if s['video'] and not s.get('author'):
+                    info = engine.oembed(s['url'])
                     if info:
-                        url = info.get('url', url)
-                        who = f" — 올린 사람: [{info['author']}]({info['author_url']})" if info['author'] else ''
-                        title = info['title'] or sc['title'] or url
-                    else:
-                        who, title = '', sc['title'] or url
-                    report.append(f"- **장면 {len(sn)}개** ({', '.join(map(str, sn))}) [{sc['site']}] "
-                                  f"[{title[:120]}]({url}){who}")
-                report.append('\n### 📰 같은 장면이 나온 페이지 (재업로드·기사 등, 원본 단서)\n')
-                for url, sc in pages:
-                    sn = sorted(set(sc['scenes']))
-                    report.append(f"- 장면 {len(sn)}개 ({', '.join(map(str, sn))}) [{sc['site']}] "
-                                  f"[{(sc['title'] or url)[:120]}]({url})")
-            report.append('\n### 장면별\n')
-            report.extend(scene_lines)
+                        s['url'] = info.get('url', s['url'])
+                        s['title'] = info['title'] or s['title']
+                        s['author'], s['author_url'] = info['author'], info['author_url']
+
+            def line(s):
+                sn = ', '.join(map(str, sorted(s['scenes'])))
+                who = f" — {s['author']}" if s.get('author') else ''
+                extra = ' · '.join(x for x in (s.get('length'), s.get('views')) if x)
+                return (f"- {'🎬 ' if s['video'] else ''}**장면 {len(s['scenes'])}개** ({sn}) [{s['site']}] "
+                        f"[{(s['title'] or s['url'])[:110]}]({s['url']}){who}" + (f' ({extra})' if extra else ''))
+
+            report.append('\n### ✅ 그림으로 확인된 출처 (같은 장면이 많은 순)\n')
+            report.append('긴 영상(몇 분짜리)이 여러 장면을 가지면 그게 원본일 가능성이 높고, '
+                          '쇼츠는 같은 원본을 가져다 쓴 재업로드일 수 있어요.\n')
+            report += [line(s) for s in ranked[:25]]
+
+            report.append('\n### 장면별 출처\n')
+            missing = []
+            for n, ((_, st, en), img) in enumerate(zip(picks, imgs), 1):
+                srcs = sorted((s for s in sources.values() if n in s['scenes']),
+                              key=lambda s: (-len(s['scenes']), -s['scenes'][n]))
+                if not srcs:
+                    missing.append(n)
+                    report.append(f'- **장면 {n}** ({st:.1f}–{en:.1f}초) `{img.relative_to(out)}` — 확인된 출처 없음')
+                    continue
+                report.append(f'- **장면 {n}** ({st:.1f}–{en:.1f}초) `{img.relative_to(out)}`')
+                for s in srcs[:3]:
+                    report.append(f"  - [{s['site']}] [{(s['title'] or s['url'])[:100]}]({s['url']})"
+                                  + (f" — {s['author']}" if s.get('author') else ''))
+            covered = n_sc - len(missing)
+            report.insert(len(report) - n_sc - 1, f'\n**장면 {n_sc}개 중 {covered}개의 출처를 확인했어요.**'
+                          + (f" 못 찾은 장면: {', '.join(map(str, missing))}" if missing else ''))
+            print(f'  출처 확인: 장면 {covered}/{n_sc}개', flush=True)
     finally:
+        pool.shutdown()
         if engine:
             engine.close()
     (out / 'report.md').write_text('\n'.join(report) + '\n', encoding='utf-8')
