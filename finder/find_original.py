@@ -293,8 +293,14 @@ class Matcher:
             return 0
         src = np.float32([ka[m.queryIdx].pt for m in good])
         dst = np.float32([kb[m.trainIdx].pt for m in good])
-        _, mask = self.cv2.findHomography(src, dst, self.cv2.RANSAC, 8.0)
-        return int(mask.sum()) if mask is not None else 0
+        H, mask = self.cv2.findHomography(src, dst, self.cv2.RANSAC, 8.0)
+        if H is None or mask is None:
+            return 0
+        # 점들이 한 줄·한 점으로 뭉개진 변환(타일·창살 같은 반복 무늬에서 생김)은 같은 장면이 아님
+        det = float(np.linalg.det(H[:2, :2]))
+        if not 0.1 < det < 10:
+            return 0
+        return int(mask.sum())
 
     def scene_at(self, t):
         for n, (s, e) in enumerate(self.scenes, 1):
@@ -392,16 +398,41 @@ STOP = set('the a an of and or to in on for with is are be this that you your it
            'video videos shorts short youtube tiktok instagram vk watch clip clips online free full hd new'.split())
 
 
-def queries_from_titles(titles, extra, limit=8):
-    qs, seen = list(extra), set()
+def clean_title(t):
+    t = re.sub(r'\s*[-|–]\s*(YouTube|TikTok|Instagram|VK.*|Pinterest|Facebook|Twitter.*|Sotwe.*)\s*$', '', t, flags=re.I)
+    return t.replace('#', ' ').strip()
+
+
+def keywords(titles, n=5):
+    """확인된 결과 제목들에서 여러 번 나온 영어 핵심 단어 (예: fakir, hostile, architecture, bench)."""
+    cnt = defaultdict(int)
     for t in titles:
-        t = re.sub(r'\s*[-|–]\s*(YouTube|TikTok|Instagram|VK.*|Pinterest|Facebook).*$', '', t, flags=re.I)
-        t = re.sub(r'#\S+', '', t)
-        words = [w for w in re.findall(r"[\w'’]+", t) if w.lower() not in STOP]
-        q = ' '.join(words[:8])
-        if len(q) >= 8 and q.lower() not in seen:
+        words = {re.sub(r"['’]s?$", '', w) for w in re.findall(r"[A-Za-z][a-z'’]{3,}", clean_title(t).lower())}
+        for w in words:
+            if w not in STOP and len(w) >= 4:
+                cnt[w] += 1
+    return [w for w, c in sorted(cnt.items(), key=lambda kv: -kv[1]) if c >= 2][:n]
+
+
+def make_queries(titles, extra, limit=10):
+    """유튜브 검색어: 직접 준 검색어 → 핵심 단어 조합 → 확인된 영상 제목."""
+    qs, seen = [], set()
+
+    def add(q):
+        q = ' '.join(q.split()[:8])
+        if len(q) >= 6 and q.lower() not in seen:
             seen.add(q.lower())
             qs.append(q)
+    for q in extra:
+        add(q)
+    kw = keywords(titles, 4)
+    if len(kw) >= 3:
+        add(' '.join(kw[:3]))
+    for i, j in ((0, 1), (0, 2), (1, 2)):
+        if j < len(kw):
+            add(f'{kw[i]} {kw[j]}')
+    for t in titles:
+        add(' '.join(w for w in re.findall(r"[\w'’]+", clean_title(t)) if w.lower() not in STOP))
     return qs[:limit]
 
 
@@ -486,22 +517,38 @@ def main():
             counts = defaultdict(int)
             for t in raw_titles:
                 counts[t] += 1
-            queries = queries_from_titles(sorted(counts, key=lambda t: -counts[t]), args.query)
-            for q in queries:
-                for r in youtube_search(engine.s, q):
-                    ytc.setdefault(r['id'], r)
-            print(f'  유튜브 검색어 {len(queries)}개 → 후보 영상 {len(ytc)}개 대조 중…', flush=True)
 
             def check_yt(item):
                 vid_id, info = item
                 hits = [matcher.locate(im) for im in youtube_frames(engine.s, vid_id)]
                 return vid_id, info, [h for h in hits if h]
-            for vid_id, info, hits in pool.map(check_yt, ytc.items()):
-                url = f'https://www.youtube.com/watch?v={vid_id}'
-                for h in hits:
-                    record({'url': url, 'site': 'youtube', 'video': True, 'title': info.get('title', ''),
-                            'length': info.get('length', ''), 'views': info.get('views', ''),
-                            'author': info.get('author', '')}, h)
+
+            # 두 번 돌림: 1차에서 확인된 유튜브 영상 제목으로 한 번 더 검색하면 같은 원본을 쓴 영상이 더 나옴
+            checked, used = set(), set()
+            for rnd in (1, 2):
+                titles = sorted(counts, key=lambda t: -counts[t])
+                queries = [q for q in make_queries(titles, args.query if rnd == 1 else []) if q not in used]
+                used.update(queries)
+                for q in queries:
+                    for r in youtube_search(engine.s, q):
+                        ytc.setdefault(r['id'], r)
+                todo = [(k, v) for k, v in ytc.items() if k not in checked][:120]
+                checked.update(k for k, _ in todo)
+                print(f'  유튜브 {rnd}차: 검색어 {len(queries)}개 ({", ".join(queries[:4])}…) → 후보 {len(todo)}개 대조',
+                      flush=True)
+                found = 0
+                for vid_id, info, hits in pool.map(check_yt, todo):
+                    url = f'https://www.youtube.com/watch?v={vid_id}'
+                    if hits:
+                        found += 1
+                        counts[info.get('title', '')] += 2
+                    for h in hits:
+                        record({'url': url, 'site': 'youtube', 'video': True, 'title': info.get('title', ''),
+                                'length': info.get('length', ''), 'views': info.get('views', ''),
+                                'author': info.get('author', '')}, h)
+                print(f'    같은 장면이 있는 영상 {found}개', flush=True)
+                if not found:
+                    break
 
             # 3) 정리
             if not sources:
@@ -533,22 +580,24 @@ def main():
                           '쇼츠는 같은 원본을 가져다 쓴 재업로드일 수 있어요.\n')
             report += [line(s) for s in ranked[:25]]
 
-            report.append('\n### 장면별 출처\n')
-            missing = []
+            scene_lines, missing = [], []
             for n, ((_, st, en), img) in enumerate(zip(picks, imgs), 1):
                 srcs = sorted((s for s in sources.values() if n in s['scenes']),
                               key=lambda s: (-len(s['scenes']), -s['scenes'][n]))
                 if not srcs:
                     missing.append(n)
-                    report.append(f'- **장면 {n}** ({st:.1f}–{en:.1f}초) `{img.relative_to(out)}` — 확인된 출처 없음')
+                    scene_lines.append(f'- **장면 {n}** ({st:.1f}–{en:.1f}초) `{img.relative_to(out)}` — 확인된 출처 없음')
                     continue
-                report.append(f'- **장면 {n}** ({st:.1f}–{en:.1f}초) `{img.relative_to(out)}`')
+                scene_lines.append(f'- **장면 {n}** ({st:.1f}–{en:.1f}초) `{img.relative_to(out)}`')
                 for s in srcs[:3]:
-                    report.append(f"  - [{s['site']}] [{(s['title'] or s['url'])[:100]}]({s['url']})"
+                    scene_lines.append(f"  - [{s['site']}] [{(s['title'] or s['url'])[:100]}]({s['url']})"
                                   + (f" — {s['author']}" if s.get('author') else ''))
             covered = n_sc - len(missing)
-            report.insert(len(report) - n_sc - 1, f'\n**장면 {n_sc}개 중 {covered}개의 출처를 확인했어요.**'
-                          + (f" 못 찾은 장면: {', '.join(map(str, missing))}" if missing else ''))
+            summary = (f'**장면 {n_sc}개 중 {covered}개의 출처를 그림으로 확인했어요.**'
+                       + (f" 못 찾은 장면: {', '.join(map(str, missing))}" if missing else ''))
+            report.insert(report.index('\n### ✅ 그림으로 확인된 출처 (같은 장면이 많은 순)\n'), summary)
+            report.append('\n### 장면별 출처\n')
+            report += scene_lines
             print(f'  출처 확인: 장면 {covered}/{n_sc}개', flush=True)
     finally:
         pool.shutdown()
