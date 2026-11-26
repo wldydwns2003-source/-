@@ -41,3 +41,13 @@ GitHub Actions가 매주 월요일 오전 `config.json`의 해시태그를 수�
 - **🔍 이 영상 원본 찾기** → Google 렌즈 선택 → 렌즈 검색창에 `instagram` / `tiktok` / `youtube` 추가
 
 **설정:** 저장소 Settings → Pages → Branch 선택 → Save 후 `https://<아이디>.github.io/<저장소>/lens/` 를 안드로이드 크롬으로 열기 → ⋮ → 앱 설치
+
+## 🎬 쇼츠 대본 생성기 (`script/`)
+제품 영상을 올리면 기준 쇼츠("다이소에서 꼭 챙겨야 하는 BEST")와 같은 구조·말투로 자막 대본을 만듭니다.
+
+- 초반 훅 고정: `와~ 여러분 / 다이소 가시면 / 이건 꼭 챙기세요` (설정에서 변경 가능)
+- 구조: 훅 → 문제·공감 → 권위자 전환 → 신뢰 근거 → 원리→결과 → 킬링 포인트 → 추가 장점 → 감각적 마무리 → 엔드카드
+- 영상에서 장면을 뽑아 Claude가 보고 대본 작성 → 줄마다 장면 썸네일·시간 표시, 바로 수정 가능
+- **📋 복사** 또는 **⬇️ SRT 다운로드** → 캡컷 텍스트 → 자막 가져오기
+- 필요: Claude API 키 (https://console.anthropic.com/settings/keys) — 브라우저에만 저장됨
+- 주소: `https://<아이디>.github.io/<저장소>/script/`
